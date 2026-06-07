@@ -29,10 +29,12 @@ def simulate(module, src, tb):
     BUILD_DIR.mkdir()
     vvp = BUILD_DIR / f"{module}.vvp"
 
+    print("attempting synthesis")
     # compile
     result = run(["iverilog", "-g2012", "-o", str(vvp), str(src), str(tb)])
     if result.returncode != 0:
         return "COMPILE FAIL", result.stderr.strip()
+    print("synthesis succeeded")
 
     # simulate
     result = run(["vvp", str(vvp)])
@@ -74,7 +76,7 @@ def main():
 
     results = []
     for module, src, tb in pairs:
-        status, detail = simulate(module, src, tb)
+        status, detail = simulate(module, ["src/definitions.sv"] + src, tb)
         results.append((module, status))
         marker = "✓" if status == "PASS" else "✗"
         print(f"  {marker}  {module:<30} {status}")
