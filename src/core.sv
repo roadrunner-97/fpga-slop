@@ -150,9 +150,9 @@ module core
         end
 
         if(controls.mem_write) begin
-            ram_wr_addr = reg_rd1_data + controls.immediate;
+            ram_wr_addr = reg_rd2_data + controls.immediate;
             ram_wr_enable = '1;
-            ram_wr_data = reg_rd2_data;
+            ram_wr_data = reg_rd1_data;
         end
     end
 

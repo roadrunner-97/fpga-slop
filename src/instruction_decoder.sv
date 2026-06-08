@@ -34,12 +34,17 @@ module instruction_decoder
             end
         endcase
 
+        case(in.opcode)
+            OP_LD, OP_ST, OP_BEQ, OP_BLT: begin
+                out.reg_b = in.reg_destination;
+            end
+        endcase
+
         if(in.opcode == OP_LD) out.mem_read = '1;
         if(in.opcode == OP_ST) out.mem_write = '1;
         if(in.opcode == OP_BEQ || in.opcode == OP_BLT) begin
                 out.immediate = in.operand.imm;
 		out.branch = '1;
-                out.reg_b = in.reg_destination;
 	end
         if(in.opcode == OP_JMP ||
            in.opcode == OP_JAL ||
