@@ -18,11 +18,12 @@ module instruction_decoder
         out.branch = '0;
         out.jump = '0;
         out.halt = '0;
-        out.reg_writeback = '1;
+        out.reg_writeback = '0;
 
-        //most operations require register writeback, this catches the special ones
         case(in.opcode)
-            OP_ST, OP_BEQ, OP_BLT, OP_JMP, OP_JREL, OP_NOP, OP_HALT: out.reg_writeback = '0;
+            OP_ADD, OP_ADDI, OP_SUB, OP_SUBI, OP_AND, OP_ANDI, OP_OR, OP_ORI,
+            OP_XOR, OP_XORI, OP_SHL, OP_SHLI, OP_SHR, OP_SHRI, OP_LD, OP_LDI:
+		out.reg_writeback = '1;
         endcase
 
         case(in.opcode)
