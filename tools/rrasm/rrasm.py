@@ -34,6 +34,16 @@ aliases = {
 	"hlt": "halt",
 };
 
+vmembase = 0xfc00; # default executable base
+
+symbols = {};
+
+macros = {};
+
+unresolved = [];
+
+exports = [];
+
 def mov_virtual_instruction(a, b):
 	if (a["type"] == "mem" and b["type"] == "reg"):
 		return {"type": "instruction", "name": "st"};
@@ -54,7 +64,7 @@ def rr_imm_virtual_resolver(a, b, c, rr, imm):
 	if (c["type"] == "reg"):
 		return {"type": "instruction", "name": rr, "operands": [a, b, c]};
 
-	if (c["type"] == "int"):
+	if (c["type"] == "int" or c["type"] == "sym"):
 		return {"type": "instruction", "name": imm, "operands": [a, b, c]};
 
 	return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
@@ -64,23 +74,46 @@ def serialise(bytesize, operand):
 
 	# decimal - float (not supported by this procesor, oh well!)
 	if (operand["type"] == "decimal" and bytesize == 4):
-		return struct.pack("<f", value);
+		return struct.pack(">f", value);
 	if (operand["type"] == "decimal" and bytesize == 8):
-		return struct.pack("<d", value);
+		return struct.pack(">d", value);
 
-	if (operand["type"] == "int"):
+	if (operand["type"] == "int" or operand["type"] == "sym"):
+		if (operand["type"] == "sym"):
+			if value not in symbols:
+				return {"type": "error", "value": ERR_SYM_NOT_FOUND};
+			value = symbols[value];
+
 		format = {
 			1: "B",
 			2: "H",
 			4: "I",
 			8: "Q",
 		};
-		return struct.pack("<" + format[bytesize], value);
+		return struct.pack(">" + format[bytesize], value);
 
 	if (operand["type"] == "str"):
 		return bytes(value, "utf-8");
 
 	return {"type": "error", "value": ERR_SERIALISATION_FAILED};
+
+def org_virtual(origin):
+	global vmembase
+	if (origin["type"] != "int"):
+		return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
+
+	if (origin["value"] < 0 or origin["value"] >= 0x10000):
+		return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
+
+	vmembase = origin["value"];
+	return {"type": "null"};
+
+def extern_virtual(sym):
+	if (sym["type"] != "sym"):
+		return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
+
+	exports.append(sym["value"]);
+	return {"type": "null"};
 
 def dd_virtual(bytesize, *operands):
 	data = b"";
@@ -101,6 +134,8 @@ virtual = {
 	"xor": {"args": [2, 3], "resolve": lambda a, b, c=False: rr_imm_virtual_resolver(a, b, c, "xor", "xori")},
 	"shl": {"args": [2, 3], "resolve": lambda a, b, c=False: rr_imm_virtual_resolver(a, b, c, "shl", "shli")},
 	"shr": {"args": [2, 3], "resolve": lambda a, b, c=False: rr_imm_virtual_resolver(a, b, c, "shr", "shri")},
+	"org": {"args": [1], "resolve": org_virtual},
+	"extern": {"args": [1], "resolve": extern_virtual},
 	"db": {"args": False, "resolve": lambda *operands: dd_virtual(1, *operands)},
 	"dw": {"args": False, "resolve": lambda *operands: dd_virtual(2, *operands)},
 	"dd": {"args": False, "resolve": lambda *operands: dd_virtual(4, *operands)},
@@ -125,8 +160,8 @@ encodings = {
 	"shri": {"args": 3, "encoding": "dai"},
 	"ld": {"args": 2, "encoding": "da"},
 	"st": {"args": 2, "encoding": "ab"},
-	"beq": {"args": 3, "encoding": "abi"},
-	"blt": {"args": 3, "encoding": "abi"},
+	"beq": {"args": 3, "encoding": "dar"},
+	"blt": {"args": 3, "encoding": "dar"},
 	"jmp": {"args": 1, "encoding": "i"},
 	"jal": {"args": 2, "encoding": "di"},
 	"halt": {"args": 0, "encoding": ""},
@@ -174,6 +209,7 @@ ERR_UNKNOWN_DECODE_ERROR = 2;
 ERR_INCORRECT_ARG_COUNT = 3;
 ERR_UNSUPPORTED_ARGS = 4;
 ERR_SERIALISATION_FAILED = 5;
+ERR_SYM_NOT_FOUND = 6;
 
 ERR_GENERIC = -0xff;
 
@@ -260,7 +296,12 @@ def decode_operand(operand):
 
 	intdecode = decode_int_operand(operand); # try as int
 	if (intdecode["type"] == "error"):
-		return decode_decimal_operand(operand); # try as decimal
+		decimaldecode = decode_decimal_operand(operand); # try as decimal
+
+		if (decimaldecode["type"] == "error"):
+			return {"type": "sym", "value": operand}; # assume ths is some kind of symbol
+
+		return decimaldecode;
 
 	return intdecode;
 
@@ -278,16 +319,54 @@ def resolve_final_instruction(insname, operands):
 
 	return {"type": "instruction", "name": insname};
 
+def decode_symbol(symbol):
+	if (symbol[-1] == ':'):
+		return {"type": "relsym", "value": symbol[:-1]}; # make relative symbol here
+
+	words = symbol.split(" ");
+	if (len(words) != 3):
+		return {"type": "error", "value": ERR_UNKNOWN_DECODE_ERROR};
+
+	name = words[0];
+	value = decode_int_helper(words[2]);
+	symbols[name] = value;
+	return {"type": "null"};
+
+def strdedup(str, chr):
+	dup = chr + chr;
+	while (dup in str):
+		str = str.replace(dup, chr);
+	return str;
+
+def fixed_sym_decode_prepass(instruction):
+	deduped = strdedup(instruction, ' ').strip();
+	words = deduped.split(' ');
+	if (len(words) != 3):
+		return {"type": "null"};
+
+	if (words[1].lower() == "equ"):
+		return decode_symbol(deduped);
+
+	return {"type": "null"};
+
 def decode_instruction(instruction):
 	try:
 		instruction = instruction.strip();
-		if " " in instruction:
-			splitpoint = instruction.index(" ");
+		if ' ' in instruction:
+			deduped = strdedup(instruction, ' ').strip();
+			words = deduped.split(' ');
+			if (len(words) == 3 and words[1].lower() == "equ"):
+				return {"type": "null"};
+
+			splitpoint = instruction.index(' ');
 			insname = instruction[:splitpoint].strip().lower();
 
 			oplist = instruction[splitpoint+1:];
-			operands = oplist.split(",");
+			operands = oplist.split(',');
 		else:
+			if (instruction[-1] == ':'):
+				return decode_symbol(instruction.replace(' ', ''));
+
 			insname = instruction;
 			operands = [];
 
@@ -299,7 +378,7 @@ def decode_instruction(instruction):
 			decoded_operands.append(decoded);
 
 		resolved = resolve_final_instruction(insname, decoded_operands);
-		if (resolved["type"] == "data" or resolved["type"] == "error"):
+		if (resolved["type"] in ["data", "error", "null"]):
 			return resolved;
 
 		if (resolved["type"] != "instruction"):
@@ -312,7 +391,7 @@ def decode_instruction(instruction):
 	except Exception as e:
 		return {"type": "error", "value": ERR_UNKNOWN_DECODE_ERROR};
 
-def serialise_instruction(instruction):
+def serialise_instruction(instruction, offset):
 	name = instruction["name"];
 	operands = instruction["operands"];
 	if (name not in opcodes):
@@ -326,29 +405,47 @@ def serialise_instruction(instruction):
 	i = 0;
 	for operand in operands:
 		letter = encoding["encoding"][i];
-		if ((letter == "d" or letter == "a" or letter == "b") and (operand["type"] != "reg" and operand["type"] != "mem")):
+		if (operand["type"] == "sym"):
+			symname = operand["value"];
+			if (symname in symbols):
+				operand = {"type": "int", "value": symbols[symname]};
+			else:
+				operand = {"type": "int", "value": 0x0000};
+				unresolved.append({"symname": symname, "address": offset + 2});
+
+		if ((letter == 'd' or letter == 'a' or letter == 'b') and (operand["type"] != "reg" and operand["type"] != "mem")):
 			return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
-		if (letter == "i" and operand["type"] != "int"):
+		if ((letter == 'i' or letter == 'r') and operand["type"] != "int"):
 			return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
-		if (letter == "d"):
+		if (letter == 'd'):
 			serialised[1] = serialised[1] | (operand["value"] << 4);
 
-		if (letter == "a"):
+		if (letter == 'a'):
 			serialised[1] = serialised[1] | operand["value"];
 
-		if (letter == "b"):
+		if (letter == 'b'):
 			serialised[2] = serialised[2] | (operand["value"] << 4);
 
-		if (letter == "i"):
-			if (operand["value"] < 0 or operand["value"] >= 0x10000):
+		if (letter == 'i'):
+			value = operand["value"];
+			if (value < 0 or value >= 0x10000):
 				return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
-			serialised[3] = operand["value"] & 0xff;
-			serialised[2] = (operand["value"] >> 8) & 0xff;
+			serialised[3] = value & 0xff;
+			serialised[2] = (value >> 8) & 0xff;
 
-		if ((letter == "d" or letter == "a" or letter == "b") and operand["type"] == "mem"):
+		if (letter == 'r'):
+			value = operand["value"] - (vmembase + (offset >> 1));
+			if (value < -0x7fff or value > 0x7fff):
+				return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
+
+			packed = struct.pack(">h", value);
+			serialised[2] = packed[0];
+			serialised[3] = packed[1];
+
+		if ((letter == 'd' or letter == 'a' or letter == 'b') and operand["type"] == "mem"):
 			if (operand["imm"] < 0 or operand["imm"] >= 0x10000):
 				return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
@@ -359,7 +456,7 @@ def serialise_instruction(instruction):
 
 	return bytes(serialised);
 
-def assemble_instruction(instruction):
+def assemble_instruction(instruction, offset):
 	decoded = decode_instruction(instruction);
 	if (decoded["type"] == "error"):
 		return decoded;
@@ -367,10 +464,23 @@ def assemble_instruction(instruction):
 	if (decoded["type"] == "data"):
 		return decoded["value"];
 
+	if (decoded["type"] == "relsym"):
+		symbols[decoded["value"]] = vmembase + (offset >> 1);
+		return b"";
+
+	if (decoded["type"] == "null"):
+		return b"";
+
 	if (decoded["type"] != "instruction"):
 		return {"type": "error", "value": ERR_UNKNOWN_DECODE_ERROR};
 
-	return serialise_instruction(decoded);
+	return serialise_instruction(decoded, offset);
+
+def strip_comments(line):
+	if (";" not in line):
+		return line;
+
+	return line[:line.index(";")];
 
 def process_file(source, output, format):
 	if (output == None):
@@ -383,18 +493,46 @@ def process_file(source, output, format):
 	contents = file.read();
 	file.close();
 
-	assembly = b"";
-	for line in contents.split("\n"):
-		line = line.strip();
+	assembly = bytearray();
+	lines = contents.split('\n');
+	for line in lines:
+		line = strip_comments(line.strip());
 		if (line == ""):
 			continue;
-		instruction = assemble_instruction(line);
-		if (type(instruction) != bytes):
+
+		stat = fixed_sym_decode_prepass(line);
+		if (stat["type"] != "null"):
 			print("error");
 			return;
 
+	offset = 0;
+	for line in lines:
+		line = strip_comments(line.strip());
+		if (line == ""):
+			continue;
+
+		instruction = assemble_instruction(line, offset);
+		if (type(instruction) != bytes):
+			print("error", instruction);
+			return;
+
+		offset += len(instruction);
 		assembly += instruction;
 
+	for deferred in unresolved:
+		addr = deferred["address"];
+		symname = deferred["symname"];
+		if ((addr + 1) >= len(assembly)):
+			print("error");
+			return;
+
+		if (symname not in symbols):
+			print("Unresolved symbol '%s'" % symname);
+			return;
+
+		assembly[addr:addr+2] = struct.pack(">H", symbols[symname]);
+
+	assembly = bytes(assembly);
 	assembly = formats[format](assembly);
 
 	ofile = open(output, "wb");
@@ -406,5 +544,6 @@ if __name__ == "__main__":
 	parser.add_argument("source");
 	parser.add_argument("-o", "--output");
 	parser.add_argument("-f", "--format");
+	parser.add_argument("-b", "--origin");
 	args = parser.parse_args();
 	process_file(args.source, args.output, args.format);
