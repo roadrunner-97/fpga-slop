@@ -27,6 +27,7 @@ opcodes = {
 	"blt": 0x13,
 	"jmp": 0x14,
 	"jal": 0x15,
+	"ldi": 0x17,
 	"jrel": 0x16,
 	"halt": 0xff,
 };
@@ -53,6 +54,9 @@ def mov_virtual_instruction(a, b):
 
 	if (a["type"] == "reg" and b["type"] == "mem"):
 		return {"type": "instruction", "name": "ld"};
+
+	if (a["type"] == "reg" and b["type"] == "int"):
+		return {"type": "instruction", "name": "ldi"};
 
 	return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
@@ -170,6 +174,7 @@ encodings = {
 	"shri": {"args": 3, "encoding": "dai"},
 	"ld": {"args": 2, "encoding": "dm"},
 	"st": {"args": 2, "encoding": "Ma"},
+	"ldi": {"args": 2, "encoding": "di"},
 	"beq": {"args": 3, "encoding": "dar"},
 	"blt": {"args": 3, "encoding": "dar"},
 	"jmp": {"args": 1, "encoding": "i"},
