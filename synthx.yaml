@@ -22,7 +22,7 @@ packages:
 modules:
   alu:                  { deps: [definitions] }
   registers:            { deps: [definitions] }
-  mmap:                 { deps: [definitions], data: [src/program.hex]}
+  mmap:                 { deps: [definitions], data: [src/program.hex, sim/mmap.hex]}
   instruction_decoder:  { deps: [definitions]}
   clock_divider:        {}
   pulse_generator:      {}

@@ -55,61 +55,63 @@ module alu_tb;
         $dumpfile("build/alu.vcd");
         $dumpvars(0, alu_tb);
 
-        // ADD
-        check(OP_ADD, 64'h1, 64'h2, 64'h3,                        "ADD basic");
-        check(OP_ADD, 64'hFFFFFFFFFFFFFFFF, 64'h1, 64'h0,          "ADD overflow wrap");
-        check(OP_ADD, 64'h0, 64'h0, 64'h0,                        "ADD zero");
+        // ADD (and its immediate twin share the datapath)
+        check(OP_ADD,  16'h0001, 16'h0002, 16'h0003, "ADD basic");
+        check(OP_ADD,  16'hFFFF, 16'h0001, 16'h0000, "ADD overflow wrap");
+        check(OP_ADD,  16'h0000, 16'h0000, 16'h0000, "ADD zero");
+        check(OP_ADDI, 16'h0010, 16'h0022, 16'h0032, "ADDI basic");
+        check(OP_ADDI, 16'hFFFF, 16'h0001, 16'h0000, "ADDI overflow wrap");
 
         // SUB
-        check(OP_SUB, 64'h5, 64'h3, 64'h2,                        "SUB basic");
-        check(OP_SUB, 64'h0, 64'h1, 64'hFFFFFFFFFFFFFFFF,         "SUB underflow wrap");
-        check(OP_SUB, 64'hA, 64'hA, 64'h0,                        "SUB to zero");
+        check(OP_SUB,  16'h0005, 16'h0003, 16'h0002, "SUB basic");
+        check(OP_SUB,  16'h0000, 16'h0001, 16'hFFFF, "SUB underflow wrap");
+        check(OP_SUB,  16'h000A, 16'h000A, 16'h0000, "SUB to zero");
+        check(OP_SUBI, 16'h0032, 16'h0010, 16'h0022, "SUBI basic");
 
         // AND
-        check(OP_AND, 64'hFF, 64'h0F, 64'h0F,                     "AND basic");
-        check(OP_AND, 64'hFFFFFFFFFFFFFFFF, 64'h0, 64'h0,         "AND with zero");
-        check(OP_AND, 64'hAAAAAAAAAAAAAAAA, 64'h5555555555555555, 64'h0, "AND no overlap");
+        check(OP_AND,  16'h00FF, 16'h000F, 16'h000F, "AND basic");
+        check(OP_AND,  16'hFFFF, 16'h0000, 16'h0000, "AND with zero");
+        check(OP_AND,  16'hAAAA, 16'h5555, 16'h0000, "AND no overlap");
+        check(OP_ANDI, 16'hF0F0, 16'h0FF0, 16'h00F0, "ANDI basic");
 
         // OR
-        check(OP_OR, 64'hF0, 64'h0F, 64'hFF,                      "OR basic");
-        check(OP_OR, 64'h0, 64'h0, 64'h0,                         "OR zero");
-        check(OP_OR,  64'hAAAAAAAAAAAAAAAA, 64'h5555555555555555, 64'hFFFFFFFFFFFFFFFF, "OR full");
+        check(OP_OR,   16'h00F0, 16'h000F, 16'h00FF, "OR basic");
+        check(OP_OR,   16'h0000, 16'h0000, 16'h0000, "OR zero");
+        check(OP_OR,   16'hAAAA, 16'h5555, 16'hFFFF, "OR full");
+        check(OP_ORI,  16'hF000, 16'h000F, 16'hF00F, "ORI basic");
 
         // XOR
-        check(OP_XOR, 64'hFF, 64'hFF, 64'h0,                      "XOR same");
-        check(OP_XOR, 64'hAAAAAAAAAAAAAAAA, 64'h5555555555555555, 64'hFFFFFFFFFFFFFFFF, "XOR alternating");
-        check(OP_XOR, 64'h0, 64'h0, 64'h0,                        "XOR zero");
+        check(OP_XOR,  16'h00FF, 16'h00FF, 16'h0000, "XOR same");
+        check(OP_XOR,  16'hAAAA, 16'h5555, 16'hFFFF, "XOR alternating");
+        check(OP_XOR,  16'h0000, 16'h0000, 16'h0000, "XOR zero");
+        check(OP_XORI, 16'hFF00, 16'h0FF0, 16'hF0F0, "XORI basic");
 
         // SHL
-        check(OP_SHL, 64'h1, 64'h1, 64'h2,                        "SHL by 1");
-        check(OP_SHL, 64'h1, 64'h8, 64'h100,                      "SHL by 8");
-        check(OP_SHL, 64'h1, 64'h3F, 64'h8000000000000000,        "SHL to MSB");
+        check(OP_SHL,  16'h0001, 16'h0001, 16'h0002, "SHL by 1");
+        check(OP_SHL,  16'h0001, 16'h0008, 16'h0100, "SHL by 8");
+        check(OP_SHL,  16'h0001, 16'h000F, 16'h8000, "SHL to MSB");
+        check(OP_SHLI, 16'h0003, 16'h0004, 16'h0030, "SHLI by 4");
 
-        // SHR
-        check(OP_SHR, 64'h100, 64'h1, 64'h80,                     "SHR by 1");
-        check(OP_SHR, 64'h8000000000000000, 64'h3F, 64'h1,        "SHR from MSB");
-        check(OP_SHR, 64'hFFFFFFFFFFFFFFFF, 64'h1, 64'h7FFFFFFFFFFFFFFF, "SHR logical no sign extend");
+        // SHR — logical, no sign extension
+        check(OP_SHR,  16'h0100, 16'h0001, 16'h0080, "SHR by 1");
+        check(OP_SHR,  16'h8000, 16'h000F, 16'h0001, "SHR from MSB");
+        check(OP_SHR,  16'hFFFF, 16'h0001, 16'h7FFF, "SHR logical no sign extend");
+        check(OP_SHRI, 16'h00F0, 16'h0004, 16'h000F, "SHRI by 4");
 
-        // ADDI — immediate add, same datapath as ADD (immediate arrives on input_b)
-        check(OP_ADDI, 64'h0, 64'h1, 64'h1,                      "ADDI from zero");
-        check(OP_ADDI, 64'h10, 64'h22, 64'h32,                   "ADDI basic");
-        check(OP_ADDI, 64'hFFFFFFFFFFFFFFFF, 64'h1, 64'h0,        "ADDI overflow wrap");
+        // unrecognised opcode produces zero
+        check(OP_NOP,  16'h1234, 16'h5678, 16'h0000, "NOP/default zero");
 
-        // LUI — load upper immediate: result = imm << 20 (imm on input_b)
-        check(OP_LUI, 64'h0, 64'h1, 64'h100000,                  "LUI one");
-        check(OP_LUI, 64'h0, 64'hABC, 64'hABC00000,              "LUI basic");
-        check(OP_LUI, 64'h0, 64'h0, 64'h0,                       "LUI zero");
+        // equal / less_than flags (less_than is unsigned)        eq    lt
+        check_flags(16'h0000, 16'h0000, 1'b1, 1'b0, "FLAGS zero equal");
+        check_flags(16'h0005, 16'h0005, 1'b1, 1'b0, "FLAGS equal nonzero");
+        check_flags(16'hFFFF, 16'hFFFF, 1'b1, 1'b0, "FLAGS equal max");
+        check_flags(16'h0003, 16'h0005, 1'b0, 1'b1, "FLAGS a less than b");
+        check_flags(16'h0005, 16'h0003, 1'b0, 1'b0, "FLAGS a greater than b");
+        check_flags(16'h0000, 16'h0001, 1'b0, 1'b1, "FLAGS zero less than one");
+        check_flags(16'hFFFF, 16'h0000, 1'b0, 1'b0, "FLAGS max not less than zero (unsigned)");
+        check_flags(16'h0000, 16'hFFFF, 1'b0, 1'b1, "FLAGS zero less than max (unsigned)");
 
-        // equal / less_than flags                          a                   b                eq  lt
-        check_flags(64'h0,                64'h0,                1'b1, 1'b0, "FLAGS zero equal");
-        check_flags(64'h5,                64'h5,                1'b1, 1'b0, "FLAGS equal nonzero");
-        check_flags(64'hFFFFFFFFFFFFFFFF, 64'hFFFFFFFFFFFFFFFF, 1'b1, 1'b0, "FLAGS equal max");
-        check_flags(64'h3,                64'h5,                1'b0, 1'b1, "FLAGS a less than b");
-        check_flags(64'h5,                64'h3,                1'b0, 1'b0, "FLAGS a greater than b");
-        check_flags(64'h0,                64'h1,                1'b0, 1'b1, "FLAGS zero less than one");
-        check_flags(64'hFFFFFFFFFFFFFFFF, 64'h0,                1'b0, 1'b0, "FLAGS max not less than zero (unsigned)");
-        check_flags(64'h0,                64'hFFFFFFFFFFFFFFFF, 1'b0, 1'b1, "FLAGS zero less than max (unsigned)");
-
+        $display("alu_tb: all checks passed");
         $finish(0);
     end
 

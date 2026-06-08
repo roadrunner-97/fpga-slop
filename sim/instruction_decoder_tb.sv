@@ -11,42 +11,54 @@ module instruction_decoder_tb;
         .out (out)
     );
 
+    // fields that always pass straight through
     task check_base(input string label);
-        // fields that should always pass through unchanged
-        if (out.opcode          !== in.opcode)          $fatal(1, "FAIL [%s]: opcode mismatch",  label);
-        if (out.reg_destination !== in.reg_destination) $fatal(1, "FAIL [%s]: rd mismatch",      label);
-        if (out.reg_a           !== in.reg_a)           $fatal(1, "FAIL [%s]: ra mismatch",      label);
-        if (out.reg_b           !== in.reg_b)           $fatal(1, "FAIL [%s]: rb mismatch",      label);
+        if (out.opcode          !== in.opcode)          $fatal(1, "FAIL [%s]: opcode mismatch", label);
+        if (out.reg_destination !== in.reg_destination) $fatal(1, "FAIL [%s]: rd mismatch",     label);
+        if (out.reg_a           !== in.reg_a)           $fatal(1, "FAIL [%s]: ra mismatch",     label);
     endtask
 
-    task check_alu(input opcode_t op, input string label);
+    // assert the full set of control flags at once
+    task check_ctrl(
+        input string label,
+        input logic exp_use_imm, exp_mem_read, exp_mem_write,
+                    exp_branch, exp_jump, exp_halt, exp_writeback
+    );
+        if (out.use_immediate !== exp_use_imm)   $fatal(1, "FAIL [%s]: use_immediate exp %0b got %0b", label, exp_use_imm,   out.use_immediate);
+        if (out.mem_read      !== exp_mem_read)  $fatal(1, "FAIL [%s]: mem_read exp %0b got %0b",      label, exp_mem_read,  out.mem_read);
+        if (out.mem_write     !== exp_mem_write) $fatal(1, "FAIL [%s]: mem_write exp %0b got %0b",     label, exp_mem_write, out.mem_write);
+        if (out.branch        !== exp_branch)    $fatal(1, "FAIL [%s]: branch exp %0b got %0b",        label, exp_branch,    out.branch);
+        if (out.jump          !== exp_jump)      $fatal(1, "FAIL [%s]: jump exp %0b got %0b",          label, exp_jump,      out.jump);
+        if (out.halt          !== exp_halt)      $fatal(1, "FAIL [%s]: halt exp %0b got %0b",          label, exp_halt,      out.halt);
+        if (out.reg_writeback !== exp_writeback) $fatal(1, "FAIL [%s]: reg_writeback exp %0b got %0b", label, exp_writeback, out.reg_writeback);
+    endtask
+
+    // R-type ALU op: reg_b comes from the rb field, no immediate.
+    task check_alu_reg(input opcode_t op, input string label);
         in.opcode          = op;
         in.reg_destination = 4'h1;
         in.reg_a           = 4'h2;
-        in.reg_b           = 4'h3;
-        in.immediate       = 44'hDEAD;
+        in.operand.r.rb    = 4'h3;
+        in.operand.r.unused= '0;
         #1;
         check_base(label);
-        if (out.use_immediate) $fatal(1, "FAIL [%s]: use_immediate should be 0", label);
-        if (out.mem_read)      $fatal(1, "FAIL [%s]: mem_read should be 0",      label);
-        if (out.mem_write)     $fatal(1, "FAIL [%s]: mem_write should be 0",     label);
-        if (out.branch)        $fatal(1, "FAIL [%s]: branch should be 0",        label);
-        if (out.jump)          $fatal(1, "FAIL [%s]: jump should be 0",          label);
-        if (out.halt)          $fatal(1, "FAIL [%s]: halt should be 0",          label);
-        if (!out.reg_writeback) $fatal(1, "FAIL [%s]: reg_writeback should be 1", label);
+        //                use_imm mem_rd mem_wr br jmp halt wb
+        check_ctrl(label,   0,      0,     0,    0,  0,  0,  1);
+        if (out.reg_b    !== 4'h3)  $fatal(1, "FAIL [%s]: reg_b should pass through rb field", label);
+        if (out.immediate !== '0)   $fatal(1, "FAIL [%s]: immediate should be 0", label);
     endtask
 
-    task check_imm(input opcode_t op, input string label);
+    // I-type ALU op: immediate used, reg_b forced to 0.
+    task check_alu_imm(input opcode_t op, input string label);
         in.opcode          = op;
         in.reg_destination = 4'h1;
         in.reg_a           = 4'h2;
-        in.reg_b           = 4'h3;
-        in.immediate       = 44'hABCDE;
+        in.operand.imm     = 16'hABCD;
         #1;
         check_base(label);
-        if (!out.use_immediate)          $fatal(1, "FAIL [%s]: use_immediate should be 1",   label);
-        if (out.immediate !== 44'hABCDE) $fatal(1, "FAIL [%s]: immediate value wrong",       label);
-        if (!out.reg_writeback)          $fatal(1, "FAIL [%s]: reg_writeback should be 1",    label);
+        check_ctrl(label,   1,      0,     0,    0,  0,  0,  1);
+        if (out.immediate !== 16'hABCD) $fatal(1, "FAIL [%s]: immediate value wrong", label);
+        if (out.reg_b     !== 4'h0)     $fatal(1, "FAIL [%s]: reg_b should be 0 for immediate op", label);
     endtask
 
     initial begin
@@ -55,75 +67,90 @@ module instruction_decoder_tb;
 
         in = '0;
 
-        // pure register ALU ops — no immediate, no mem, no branch
-        check_alu(OP_ADD,  "ADD");
-        check_alu(OP_SUB,  "SUB");
-        check_alu(OP_AND,  "AND");
-        check_alu(OP_OR,   "OR");
-        check_alu(OP_XOR,  "XOR");
-        check_alu(OP_SHL,  "SHL");
-        check_alu(OP_SHR,  "SHR");
+        // register ALU ops
+        check_alu_reg(OP_ADD, "ADD");
+        check_alu_reg(OP_SUB, "SUB");
+        check_alu_reg(OP_AND, "AND");
+        check_alu_reg(OP_OR,  "OR");
+        check_alu_reg(OP_XOR, "XOR");
+        check_alu_reg(OP_SHL, "SHL");
+        check_alu_reg(OP_SHR, "SHR");
 
         // immediate ALU ops
-        check_imm(OP_ADDI, "ADDI");
-        check_imm(OP_LUI,  "LUI");
+        check_alu_imm(OP_ADDI, "ADDI");
+        check_alu_imm(OP_SUBI, "SUBI");
+        check_alu_imm(OP_ANDI, "ANDI");
+        check_alu_imm(OP_ORI,  "ORI");
+        check_alu_imm(OP_XORI, "XORI");
+        check_alu_imm(OP_SHLI, "SHLI");
+        check_alu_imm(OP_SHRI, "SHRI");
 
-        // load
-        in.opcode    = OP_LD;
-        in.immediate = 44'h100;
+        // LD: immediate address, reads memory, writes back
+        in = '0;
+        in.opcode      = OP_LD;
+        in.operand.imm = 16'h0100;
         #1;
-        if (!out.use_immediate) $fatal(1, "FAIL [LD]: use_immediate should be 1");
-        if (!out.mem_read)      $fatal(1, "FAIL [LD]: mem_read should be 1");
-        if (out.mem_write)      $fatal(1, "FAIL [LD]: mem_write should be 0");
-        if (!out.reg_writeback) $fatal(1, "FAIL [LD]: reg_writeback should be 1");
+        //               use_imm mem_rd mem_wr br jmp halt wb
+        check_ctrl("LD",   1,      1,     0,    0,  0,  0,  1);
+        if (out.immediate !== 16'h0100) $fatal(1, "FAIL [LD]: immediate wrong");
 
-        // store
-        in.opcode    = OP_ST;
-        in.immediate = 44'h200;
+        // ST: immediate address, writes memory, no writeback
+        in = '0;
+        in.opcode      = OP_ST;
+        in.operand.imm = 16'h0200;
         #1;
-        if (!out.use_immediate) $fatal(1, "FAIL [ST]: use_immediate should be 1");
-        if (out.mem_read)       $fatal(1, "FAIL [ST]: mem_read should be 0");
-        if (!out.mem_write)     $fatal(1, "FAIL [ST]: mem_write should be 1");
-        if (out.reg_writeback)  $fatal(1, "FAIL [ST]: reg_writeback should be 0");
+        check_ctrl("ST",   1,      0,     1,    0,  0,  0,  0);
+        if (out.immediate !== 16'h0200) $fatal(1, "FAIL [ST]: immediate wrong");
 
-        // branches
-        in.opcode    = OP_BEQ;
-        in.immediate = 44'hFF;
+        // Branches: PC-relative immediate, no writeback, and reg_b is
+        // sourced from the reg_destination field (decoder workaround),
+        // NOT from use_immediate (which stays 0 for branches).
+        in = '0;
+        in.opcode          = OP_BEQ;
+        in.reg_destination = 4'h7;
+        in.operand.imm     = 16'h00FF;
         #1;
-        if (!out.use_immediate) $fatal(1, "FAIL [BEQ]: use_immediate should be 1");
-        if (!out.branch)        $fatal(1, "FAIL [BEQ]: branch should be 1");
-        if (out.jump)           $fatal(1, "FAIL [BEQ]: jump should be 0");
-        if (out.reg_writeback)  $fatal(1, "FAIL [BEQ]: reg_writeback should be 0");
+        check_ctrl("BEQ",  0,      0,     0,    1,  0,  0,  0);
+        if (out.immediate !== 16'h00FF) $fatal(1, "FAIL [BEQ]: immediate wrong");
+        if (out.reg_b     !== 4'h7)     $fatal(1, "FAIL [BEQ]: reg_b should come from rd field");
 
-        in.opcode = OP_BLT;
+        in = '0;
+        in.opcode          = OP_BLT;
+        in.reg_destination = 4'h5;
+        in.operand.imm     = 16'h00AA;
         #1;
-        if (!out.branch)       $fatal(1, "FAIL [BLT]: branch should be 1");
-        if (out.reg_writeback) $fatal(1, "FAIL [BLT]: reg_writeback should be 0");
+        check_ctrl("BLT",  0,      0,     0,    1,  0,  0,  0);
+        if (out.immediate !== 16'h00AA) $fatal(1, "FAIL [BLT]: immediate wrong");
+        if (out.reg_b     !== 4'h5)     $fatal(1, "FAIL [BLT]: reg_b should come from rd field");
 
-        // jumps
-        in.opcode    = OP_JMP;
-        in.immediate = 44'h42;
+        // JMP: absolute immediate target, no writeback
+        in = '0;
+        in.opcode      = OP_JMP;
+        in.operand.imm = 16'h0042;
         #1;
-        if (!out.use_immediate) $fatal(1, "FAIL [JMP]: use_immediate should be 1");
-        if (!out.jump)          $fatal(1, "FAIL [JMP]: jump should be 1");
-        if (out.branch)         $fatal(1, "FAIL [JMP]: branch should be 0");
-        if (out.reg_writeback)  $fatal(1, "FAIL [JMP]: reg_writeback should be 0");
+        check_ctrl("JMP",  1,      0,     0,    0,  1,  0,  0);
+        if (out.immediate !== 16'h0042) $fatal(1, "FAIL [JMP]: immediate wrong");
 
-        in.opcode = OP_JAL;
+        // JAL: like JMP but writes the return address back to Rd
+        in = '0;
+        in.opcode      = OP_JAL;
+        in.operand.imm = 16'h0042;
         #1;
-        if (!out.jump)          $fatal(1, "FAIL [JAL]: jump should be 1");
-        if (!out.reg_writeback) $fatal(1, "FAIL [JAL]: reg_writeback should be 1");
+        check_ctrl("JAL",  1,      0,     0,    0,  1,  0,  1);
 
-        // halt
+        // NOP: inert, no writeback
+        in = '0;
+        in.opcode = OP_NOP;
+        #1;
+        check_ctrl("NOP",  0,      0,     0,    0,  0,  0,  0);
+
+        // HALT: stop, nothing else asserted
+        in = '0;
         in.opcode = OP_HALT;
         #1;
-        if (!out.halt)         $fatal(1, "FAIL [HALT]: halt should be 1");
-        if (out.branch)        $fatal(1, "FAIL [HALT]: branch should be 0");
-        if (out.jump)          $fatal(1, "FAIL [HALT]: jump should be 0");
-        if (out.mem_read)      $fatal(1, "FAIL [HALT]: mem_read should be 0");
-        if (out.mem_write)     $fatal(1, "FAIL [HALT]: mem_write should be 0");
-        if (out.reg_writeback) $fatal(1, "FAIL [HALT]: reg_writeback should be 0");
+        check_ctrl("HALT", 0,      0,     0,    0,  0,  1,  0);
 
+        $display("instruction_decoder_tb: all checks passed");
         $finish(0);
     end
 
