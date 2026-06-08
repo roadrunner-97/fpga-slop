@@ -27,6 +27,7 @@ opcodes = {
 	"blt": 0x13,
 	"jmp": 0x14,
 	"jal": 0x15,
+	"jrel": 0x16,
 	"halt": 0xff,
 };
 
@@ -164,6 +165,7 @@ encodings = {
 	"blt": {"args": 3, "encoding": "dar"},
 	"jmp": {"args": 1, "encoding": "i"},
 	"jal": {"args": 2, "encoding": "di"},
+	"jrel": {"args": 1, "encoding": "r"},
 	"halt": {"args": 0, "encoding": ""},
 };
 
