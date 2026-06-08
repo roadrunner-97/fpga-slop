@@ -45,6 +45,8 @@ unresolved = [];
 
 exports = [];
 
+pie = True;
+
 def mov_virtual_instruction(a, b):
 	if (a["type"] == "mem" and b["type"] == "reg"):
 		return {"type": "instruction", "name": "st"};
@@ -53,6 +55,12 @@ def mov_virtual_instruction(a, b):
 		return {"type": "instruction", "name": "ld"};
 
 	return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
+
+def jmp_virtual_instruction(a, b):
+	if (pie):
+		return {"type": "instruction", "name": "jrel"};
+
+	return {"type": "instruction", "name": "jmp"};
 
 def rr_imm_virtual_resolver(a, b, c, rr, imm):
 	if (c == False):
@@ -137,6 +145,7 @@ virtual = {
 	"shr": {"args": [2, 3], "resolve": lambda a, b, c=False: rr_imm_virtual_resolver(a, b, c, "shr", "shri")},
 	"org": {"args": [1], "resolve": org_virtual},
 	"extern": {"args": [1], "resolve": extern_virtual},
+	"jmp": {"args": [1], "resolve": jmp_virtual_instruction},
 	"db": {"args": False, "resolve": lambda *operands: dd_virtual(1, *operands)},
 	"dw": {"args": False, "resolve": lambda *operands: dd_virtual(2, *operands)},
 	"dd": {"args": False, "resolve": lambda *operands: dd_virtual(4, *operands)},
@@ -159,8 +168,8 @@ encodings = {
 	"shli": {"args": 3, "encoding": "dai"},
 	"shr": {"args": 3, "encoding": "dab"},
 	"shri": {"args": 3, "encoding": "dai"},
-	"ld": {"args": 2, "encoding": "da"},
-	"st": {"args": 2, "encoding": "ab"},
+	"ld": {"args": 2, "encoding": "dm"},
+	"st": {"args": 2, "encoding": "Ma"},
 	"beq": {"args": 3, "encoding": "dar"},
 	"blt": {"args": 3, "encoding": "dar"},
 	"jmp": {"args": 1, "encoding": "i"},
@@ -415,16 +424,19 @@ def serialise_instruction(instruction, offset):
 				operand = {"type": "int", "value": 0x0000};
 				unresolved.append({"symname": symname, "address": offset + 2});
 
-		if ((letter == 'd' or letter == 'a' or letter == 'b') and (operand["type"] != "reg" and operand["type"] != "mem")):
+		if ((letter == 'd' or letter == 'a' or letter == 'b') and operand["type"] != "reg"):
+			return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
+
+		if ((letter == 'm' or letter == 'M') and operand["type"] != "mem"):
 			return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
 		if ((letter == 'i' or letter == 'r') and operand["type"] != "int"):
 			return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
-		if (letter == 'd'):
+		if (letter == 'd' or letter == 'M'):
 			serialised[1] = serialised[1] | (operand["value"] << 4);
 
-		if (letter == 'a'):
+		if (letter == 'a' or letter == 'm'):
 			serialised[1] = serialised[1] | operand["value"];
 
 		if (letter == 'b'):
@@ -447,7 +459,7 @@ def serialise_instruction(instruction, offset):
 			serialised[2] = packed[0];
 			serialised[3] = packed[1];
 
-		if ((letter == 'd' or letter == 'a' or letter == 'b') and operand["type"] == "mem"):
+		if ((letter == 'm' or letter == 'M') and operand["type"] == "mem"):
 			if (operand["imm"] < 0 or operand["imm"] >= 0x10000):
 				return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
@@ -547,5 +559,7 @@ if __name__ == "__main__":
 	parser.add_argument("-o", "--output");
 	parser.add_argument("-f", "--format");
 	parser.add_argument("-b", "--origin");
+	parser.add_argument("-s", "--no-pie", action="store_true");
 	args = parser.parse_args();
+	pie = not args.no_pie;
 	process_file(args.source, args.output, args.format);
