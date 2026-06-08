@@ -22,7 +22,7 @@ module instruction_decoder
 
         //most operations require register writeback, this catches the special ones
         case(in.opcode)
-            OP_ST, OP_BEQ, OP_BLT, OP_JMP, OP_NOP, OP_HALT: out.reg_writeback = '0;
+            OP_ST, OP_BEQ, OP_BLT, OP_JMP, OP_JREL, OP_NOP, OP_HALT: out.reg_writeback = '0;
         endcase
 
         case(in.opcode)
