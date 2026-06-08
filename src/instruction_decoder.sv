@@ -27,7 +27,7 @@ module instruction_decoder
 
         case(in.opcode)
             OP_ADDI, OP_SUBI, OP_ANDI, OP_ORI, OP_XORI, OP_SHLI,
-            OP_SHRI, OP_LD, OP_ST, OP_BEQ, OP_BLT, OP_JMP, OP_JAL: begin
+            OP_SHRI, OP_LD, OP_ST, OP_JMP, OP_JAL: begin
                 out.immediate = in.operand.imm;
                 out.use_immediate = '1;
                 out.reg_b = '0;
@@ -36,8 +36,11 @@ module instruction_decoder
 
         if(in.opcode == OP_LD) out.mem_read = '1;
         if(in.opcode == OP_ST) out.mem_write = '1;
-        if(in.opcode == OP_BEQ ||
-           in.opcode == OP_BLT) out.branch = '1;
+        if(in.opcode == OP_BEQ || in.opcode == OP_BLT) begin
+                out.immediate = in.operand.imm;
+		out.branch = '1;
+                out.reg_b = in.reg_destination;
+	end
         if(in.opcode == OP_JMP ||
            in.opcode == OP_JAL) out.jump = '1;
         if (in.opcode == OP_HALT) out.halt = '1;
