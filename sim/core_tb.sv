@@ -28,7 +28,7 @@ module core_tb;
         // run long enough to see several fibonacci iterations
         // each iteration is 4 instructions (3x ADD + JMP)
         // so 200 cycles gives ~25 iterations
-        repeat(200) @(posedge clock);
+        repeat(500) @(posedge clock);
 
         $finish(0);
     end

@@ -43,7 +43,6 @@ module core
 
     mmap #(
         .RAM_SIZE(1024),
-        .ROM_SIZE(1024),
         .FILE("src/program.hex")
     ) mmap(
         .clock(clock),
@@ -131,7 +130,8 @@ module core
 
         alu_input_a = reg_rd1_data;
 
-        if(controls.reg_writeback && core_state == EXECUTE) begin
+        if(controls.reg_writeback && core_state == EXECUTE ||
+           controls.opcode == OP_LD && core_state == TRANSFER) begin
             reg_wr_data = alu_result;
             reg_wr_select = controls.reg_destination;
             reg_wr_enable = '1;
