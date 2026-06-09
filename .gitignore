@@ -5,3 +5,7 @@ __pycache__/
 .venv/
 src/placeable_hardware/*
 *.gprj.*
+
+src/program.hex
+
+*.user
