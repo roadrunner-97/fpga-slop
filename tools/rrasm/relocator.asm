@@ -1,6 +1,7 @@
-org 0xfc00
+org 0x0000
 
-RELOCATION_ADDRESS equ 0x0010
+
+RELOCATION_ADDRESS equ 0x0A00
 
 mov r0, payload
 mov r1, payload_end

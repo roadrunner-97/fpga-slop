@@ -83,9 +83,35 @@ module core
 
     assign curr_opcode = controls.opcode;
     assign output_byte = pc[7:0];
+
+
+    cpu_core_state_t core_state;
+
     always_ff @(posedge clock) begin
-        if(reset) pc <= RESET_ADDRRESS;
-        else pc <= pc_next;
+        if(reset) begin
+            pc <= RESET_ADDRRESS;
+            core_state <= FETCH;
+        end else begin
+            case(core_state)
+                FETCH: begin
+                    core_state <= EXECUTE; // this cycle we just loaded the instruction from memory
+                end
+
+                EXECUTE: begin
+                    if(controls.mem_read || controls.mem_write) begin
+                        core_state <= TRANSFER;
+                    end else begin
+                        core_state <= FETCH;
+                        pc <= pc_next;
+                    end
+                end
+
+                TRANSFER: begin
+                    core_state <= FETCH;
+                    pc <= pc_next;
+                end
+            endcase
+        end
     end
 
     always_comb begin

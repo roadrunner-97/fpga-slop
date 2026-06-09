@@ -28,13 +28,17 @@ package definitions;
         OP_HALT  = 8'hFF
     } opcode_t;
 
-    localparam int RAM_SIZE = 1024;
-    localparam int ROM_SIZE = 1024;
+    typedef enum logic[1:0]{
+        FETCH, /*fetch the instruction pointed to by the PC */
+        EXECUTE,/*decode the current instruction now fetched */
+        TRANSFER /*some operations require an extra cycle to interact with memory once decoded */
+    } cpu_core_state_t;
+
+    localparam int RAM_SIZE = 32768; /* in units of kilowords */
     localparam int REG_COUNT = 16;
     localparam int RAM_WIDTH = 16;
-    localparam int ROM_START = 65536 - ROM_SIZE;
 
-    localparam int RESET_ADDRRESS = 16'hFC00;
+    localparam int RESET_ADDRRESS = 16'h0000;
 
 
     typedef logic [RAM_WIDTH-1:0] addr_t;

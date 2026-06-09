@@ -1,3 +1,5 @@
+org 0x0000
+
 addi r1, r0, 0x0000
 addi r2, r0, 0x0001
 loop:

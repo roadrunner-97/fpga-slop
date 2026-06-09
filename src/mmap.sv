@@ -19,28 +19,27 @@ module mmap #(
 );
 
     word_t memory [RAM_SIZE];
-    word_t rom [ROM_SIZE];
-    initial $readmemh(FILE, rom);
+    initial $readmemh(FILE, memory);
 
     always_ff @(posedge clock) begin
-        if(write_enable && write_address < ROM_START) begin
+        if(write_enable && write_address < RAM_SIZE) begin
             memory[write_address] <= write_data;
         end
     end
 
     always_comb begin
-        if(read_address < ROM_START) begin
+        if(read_address < RAM_SIZE) begin
             read_data = memory[read_address];
         end else begin
-            read_data = rom[read_address - ROM_START];
+            read_data = 'b0;
         end
     end
 
     always_comb begin
-        if (instruction_pointer < ROM_START) begin
+        if (instruction_pointer < RAM_SIZE -1) begin
             instruction_data = {memory[instruction_pointer], memory[instruction_pointer + 1]};
         end else begin
-            instruction_data = {rom[instruction_pointer - ROM_START], rom[instruction_pointer - ROM_START + 1]};
+            instruction_data = 'b0;
         end
     end
 

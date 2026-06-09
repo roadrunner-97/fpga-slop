@@ -1,4 +1,4 @@
-org 0xfc00	; set origin
+org 0x0000
 
 mov r0, 0x0010
 mov r1, 0xBABE
