@@ -4,3 +4,4 @@ impl
 __pycache__/
 .venv/
 src/placeable_hardware/*
+*.gprj.*
