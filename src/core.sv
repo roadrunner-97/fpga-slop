@@ -84,7 +84,7 @@ module core
     assign curr_opcode = controls.opcode;
     assign output_byte = pc[7:0];
     always_ff @(posedge clock) begin
-        if(reset) pc <= 16'hFC00;
+        if(reset) pc <= RESET_ADDRRESS;
         else pc <= pc_next;
     end
 

@@ -34,6 +34,8 @@ package definitions;
     localparam int RAM_WIDTH = 16;
     localparam int ROM_START = 65536 - ROM_SIZE;
 
+    localparam int RESET_ADDRRESS = 16'hFC00;
+
 
     typedef logic [RAM_WIDTH-1:0] addr_t;
 
