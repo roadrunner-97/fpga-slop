@@ -1,4 +1,4 @@
-org 0xfc00	; set origin
+org 0x0000	; set origin
 
 xor r0, r0
 xor r1, r1

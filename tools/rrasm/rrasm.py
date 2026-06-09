@@ -38,7 +38,7 @@ aliases = {
 	"hlt": "halt",
 };
 
-vmembase = 0xfc00; # default executable base
+vmembase = 0x0000; # default executable base
 
 symbols = {}; # symbols - filled at runtime
 
