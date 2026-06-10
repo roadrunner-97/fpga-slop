@@ -230,12 +230,11 @@ def null_pad(bin, padlen):
 # transform bin to fpgasynth format
 def fpgasynth_format_transformer(bin):
 	output = b"";
-	words = splitn(bin, 2);
+	words = splitn(bin, 4);
 	for word in words:
-		word = null_pad(word, 2);
-		high = hex(word[0])[2:].zfill(2).upper();
-		low = hex(word[1])[2:].zfill(2).upper();
-		output += bytes(high + low + "\n", "utf-8");
+		word = null_pad(word, 4);
+		hexstr = "".join(hex(b)[2:].zfill(2).upper() for b in word);
+		output += bytes(hexstr + "\n", "utf-8");
 	return output
 
 # transform bin to .mi format
@@ -497,9 +496,9 @@ def serialise_instruction(instruction, offset):
 				operand = {"type": "int", "value": vmembase};
 				if (letter == 'r'):
 					relative_unresolved = True;
-					unresolved.append({"type": "rel16", "symname": symname, "address": offset + 2, "relbase": vmembase + (offset >> 1)});
+					unresolved.append({"type": "rel16", "symname": symname, "address": offset + 1, "relbase": vmembase + (offset)});
 				else:
-					unresolved.append({"type": "abs16", "symname": symname, "address": offset + 2});
+					unresolved.append({"type": "abs16", "symname": symname, "address": offset + 1});
 
 		# this needs to be simplified, very messy due to frequent changes
 		if ((letter == 'd' or letter == 'a' or letter == 'b') and operand["type"] != "reg"):
@@ -529,7 +528,7 @@ def serialise_instruction(instruction, offset):
 			serialised[2] = (value >> 8) & 0xff;
 
 		if (letter == 'r' and relative_unresolved == False):
-			value = operand["value"] - (vmembase + (offset >> 1));
+			value = operand["value"] - (vmembase + offset);
 			if ((value < -0x7fff) or (value > 0x7fff)):
 				print(value, operand, vmembase, offset);
 				return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
@@ -559,7 +558,7 @@ def assemble_instruction(instruction, offset):
 		return decoded["value"];
 
 	if (decoded["type"] == "relsym"):
-		symbols[decoded["value"]] = vmembase + (offset >> 1);
+		symbols[decoded["value"]] = vmembase + offset;
 		return b"";
 
 	if (decoded["type"] == "null"):

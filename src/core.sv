@@ -41,6 +41,8 @@ module core
     logic alu_less_than;
     opcode_t curr_opcode;
 
+    word_t signed_immediate;
+
     mmap #(
         .RAM_SIZE(1024),
         .FILE("src/program.hex")
@@ -114,7 +116,7 @@ module core
     end
 
     always_comb begin
-        pc_next = pc + 2;
+        pc_next = pc + 1;
 
         reg_wr_enable = '0;
         reg_wr_select = '0;
@@ -153,7 +155,8 @@ module core
                     reg_wr_data = pc + 1;
                 end
                 OP_JREL: begin
-                    pc_next = pc + $signed(controls.immediate);
+                    signed_immediate = 32'($signed(controls.immediate[15:0]));
+                    pc_next = pc + 32'($signed(controls.immediate[15:0]));
                 end
             endcase
         end
