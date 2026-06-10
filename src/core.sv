@@ -41,6 +41,13 @@ module core
     logic alu_less_than;
     opcode_t curr_opcode;
 
+    logic idc_stalled;
+    word_t reg_rd1_override;
+    word_t reg_rd2_override;
+    addr_t wr_select_override = '0;
+    word_t wr_data_override = '0;
+    logic wr_enable_override = '0;
+
     mmap #(
         .RAM_SIZE(1024),
         .FILE("src/program.hex")
@@ -57,6 +64,14 @@ module core
 
     instruction_decoder idc(
         .in(current_instruction),
+	.stalled(idc_stalled),
+	.rd1_override(reg_rd1_override),
+	.rd2_override(reg_rd2_override),
+
+	.wr_select_override(wr_select_override),
+	.wr_data_override(wr_data_override),
+	.wr_enable_override(wr_enable_override),
+
         .out(controls)
     );
 
@@ -83,17 +98,26 @@ module core
     assign curr_opcode = controls.opcode;
     assign output_byte = pc[7:0];
 
+    assign exception = controls.exception;
 
     cpu_core_state_t core_state;
 
     always_ff @(posedge clock) begin
         if(reset) begin
             pc <= RESET_ADDRRESS;
+	    idc_stalled <= '0;
+            reg_rd1_override <= '0;
+            reg_rd2_override <= '0;
             core_state <= FETCH;
         end else begin
             case(core_state)
                 FETCH: begin
-                    core_state <= EXECUTE; // this cycle we just loaded the instruction from memory
+			if (controls.exception) begin
+				core_state <= EXCEPTION;
+				idc_stalled = '1;
+			end else begin
+				core_state <= EXECUTE; // this cycle we just loaded the instruction from memory
+			end
                 end
 
                 EXECUTE: begin
@@ -105,28 +129,66 @@ module core
                     end
                 end
 
-                TRANSFER: begin
+                TRANSFER: begin // stall
                     core_state <= FETCH;
                     pc <= pc_next;
                 end
+
+		EXCEPTION: begin
+			core_state <= INTERRUPT_0;
+			wr_select_override = CTRL_IVR;
+			wr_data_override = controls.exception_reason;
+			wr_enable_override = '1;
+		end
+
+		INTERRUPT_0: begin
+			core_state <= INTERRUPT_1;
+			wr_enable_override = '0;
+		end
+
+		INTERRUPT_1: begin
+			core_state = INTERRUPT_2;
+			wr_select_override = CTRL_IVO;
+			wr_data_override = pc;
+			wr_enable_override = '1;
+		end
+
+		INTERRUPT_2: begin
+			core_state = INTERRUPT_3;
+			reg_rd1_override = CTRL_IVA;
+			wr_enable_override = '0;
+		end
+
+		INTERRUPT_3: begin
+			core_state = INTERRUPT_4;
+			pc = reg_rd1_data;
+			wr_enable_override = '0;
+			wr_select_override = '0;
+			wr_data_override = '0;
+		end
+
+		INTERRUPT_4: begin
+			core_state = EXECUTE;
+			idc_stalled = 0;
+		end
             endcase
         end
     end
 
     always_comb begin
-        pc_next = pc + 2;
+	pc_next = pc + 2;
 
-        reg_wr_enable = '0;
-        reg_wr_select = '0;
-        reg_wr_data = '0;
+	reg_wr_enable = controls.wr_enable;
+	reg_wr_select = controls.wr_select;
+	reg_wr_data = controls.wr_data;
 
-        reg_rd1_select = controls.reg_a;
-        reg_rd2_select = controls.reg_b;
+	reg_rd1_select = controls.reg_a;
+	reg_rd2_select = controls.reg_b;
 
-        ram_rd_addr = '0;
-        ram_wr_addr = '0;
-        ram_wr_data = '0;
-        ram_wr_enable = '0;
+	ram_rd_addr = '0;
+	ram_wr_addr = '0;
+	ram_wr_data = '0;
+	ram_wr_enable = '0;
 
         alu_input_a = reg_rd1_data;
 
@@ -150,7 +212,7 @@ module core
                 end
                 OP_JAL: begin
                     pc_next = controls.immediate;
-                    reg_wr_data = pc + 1;
+                    reg_wr_data = pc_next;
                 end
                 OP_JREL: begin
                     pc_next = pc + $signed(controls.immediate);
@@ -175,6 +237,17 @@ module core
             ram_wr_enable = '1;
             ram_wr_data = reg_rd1_data;
         end
+
+	if (controls.opcode == OP_LDC) begin
+            reg_wr_data = reg_rd1_data;
+	    reg_wr_select = controls.reg_destination;
+	    reg_wr_enable = '1;
+	end
+	if (controls.opcode == OP_STC) begin
+            reg_wr_data = reg_rd2_data;
+	    reg_wr_select = controls.reg_destination;
+	    reg_wr_enable = '1;
+	end
 
         if(controls.opcode == OP_LDI) begin
             reg_wr_data = controls.immediate;

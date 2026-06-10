@@ -19,6 +19,9 @@ module registers(
     //debug ports to view in gtkwave
     word_t r0, r1, r2, r3, r4, r5, r6, r7;
     word_t r8, r9, r10, r11, r12, r13, r14, r15;
+
+    // control registers
+    word_t iva, ivr, ivo;
     assign r0  = registers[0];
     assign r1  = registers[1];
     assign r2  = registers[2];
@@ -35,6 +38,10 @@ module registers(
     assign r13 = registers[13];
     assign r14 = registers[14];
     assign r15 = registers[15];
+
+    assign iva = registers[16];
+    assign ivr = registers[17];
+    assign ivo = registers[18];
 
     integer i;
     initial begin

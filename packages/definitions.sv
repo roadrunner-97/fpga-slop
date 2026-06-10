@@ -25,17 +25,43 @@ package definitions;
         OP_JAL  = 8'h15,
         OP_JREL = 8'h16,
         OP_LDI  = 8'h17,
+	OP_LDC  = 8'h18, // for roadrunner: load control
+	OP_STC  = 8'h19, // for roadrunner: store controle
         OP_HALT  = 8'hFF
     } opcode_t;
 
-    typedef enum logic[1:0]{
+    // special registers
+    typedef enum logic [7:0] {
+        CTRL_IVA  = 8'h10,
+        CTRL_IVR  = 8'h11,
+        CTRL_IVO  = 8'h12
+    } ctrl_regs_t;
+
+    // interrupt reasons
+    typedef enum logic [7:0] {
+        INT_HW = 8'h00,
+        INT_EXCEPTION_INJECTED = 8'h80,
+        INT_EXCEPTION_DECODER_ERROR = 8'hfe,
+        INT_EXCEPTION_UNKNOWN_OPCODE = 8'hff
+    } int_code_t;
+
+    typedef enum logic[4:0]{
         FETCH, /*fetch the instruction pointed to by the PC */
         EXECUTE,/*decode the current instruction now fetched */
-        TRANSFER /*some operations require an extra cycle to interact with memory once decoded */
+        TRANSFER, /*some operations require an extra cycle to interact with memory once decoded */
+
+	EXCEPTION, // exception state (copy exception reason to ivr)
+	HARDWARE_INTERUPT, // hardware interrupt (write hw reason to ivr)
+	INTERRUPT_0, // yet-to-be named interruption states
+	INTERRUPT_1,
+	INTERRUPT_2,
+	INTERRUPT_3,
+	INTERRUPT_4
     } cpu_core_state_t;
 
     localparam int RAM_SIZE = 32768; /* in units of kilowords */
-    localparam int REG_COUNT = 16;
+    localparam int REG_COUNT = 24;
+    localparam int GPR_COUNT = 16;
     localparam int RAM_WIDTH = 16;
 
     localparam int RESET_ADDRRESS = 16'h0000;
@@ -46,15 +72,16 @@ package definitions;
     // word and register types
     typedef logic [15:0] word_t;
     typedef logic [$clog2(REG_COUNT)-1:0]  reg_addr_t;
+    typedef logic [$clog2(GPR_COUNT)-1:0]  insr_reg_addr_t;
 
-    // instruction fields (unpacked from a 64-bit instruction word)
+    // instruction fields (unpacked from a 32-bit instruction word)
     typedef struct packed {
         opcode_t     opcode;
-        reg_addr_t   reg_destination;
-        reg_addr_t   reg_a;
+        insr_reg_addr_t   reg_destination;
+        insr_reg_addr_t   reg_a;
         union packed {
             struct packed {
-                reg_addr_t   rb;
+                insr_reg_addr_t   rb;
                 logic [11:0] unused;
             } r;
             logic [15:0] imm;
@@ -66,7 +93,13 @@ package definitions;
         reg_addr_t reg_destination;
         reg_addr_t reg_a;
         reg_addr_t reg_b;
+
+        addr_t     wr_select;
+        word_t     wr_data;
+        logic      wr_enable;
+
         word_t     immediate;
+	int_code_t exception_reason;
         logic      use_immediate;
         logic      mem_read;
         logic      mem_write;
@@ -74,6 +107,7 @@ package definitions;
         logic      branch;
         logic      jump;
         logic      halt;
+	logic      exception;
     } decoded_instruction_t;
 
 endpackage
