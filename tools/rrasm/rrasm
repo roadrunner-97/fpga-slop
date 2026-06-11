@@ -42,6 +42,9 @@ encodings = {
 	"sts":	{"opcode": 0x1b, "args": 1, "encoding": "a"},
 	"push":	{"opcode": 0x1c, "args": 1, "encoding": "a"},
 	"pop":	{"opcode": 0x1d, "args": 1, "encoding": "d"},
+	"iret":	{"opcode": 0x1e, "args": 0, "encoding": ""},
+	"ldio":	{"opcode": 0x1f, "args": 2, "encoding": "da"},
+	"stio":	{"opcode": 0x20, "args": 2, "encoding": "da"},
 	"halt":	{"opcode": 0xff, "args": 0, "encoding": ""},
 };
 
@@ -112,14 +115,11 @@ def mov_virtual_instruction(a, b):
 	if (a["type"] == "ctrl" and b["type"] == "reg"):
 		return {"type": "instruction", "name": "stc"};
 
-
-
 	if ((a["type"] == "vreg" and a["value"] == VREG_SP) and b["type"] == "reg"):
 		return {"type": "instruction", "name": "sts", "operands": [b]};
 
 	if (a["type"] == "reg" and (b["type"] == "vreg" and b["value"] == VREG_SP)):
 		return {"type": "instruction", "name": "lds", "operands": [a]};
-
 
 	return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
@@ -133,6 +133,14 @@ def jmp_virtual_instruction(a):
 # `jmpabs` instruction virtual resolver, resolve to jmp always regardless of pie
 def jmpabs_virtual_instruction(a):
 	return {"type": "instruction", "name": "jmp"};
+
+# `out` instruction virtual resolver, resolve to stio always
+def out_virtual_instruction(a, b):
+	return {"type": "instruction", "name": "stio"};
+
+# `out` instruction virtual resolver, resolve to ldio
+def in_virtual_instruction(a, b):
+	return {"type": "instruction", "name": "ldio"};
 
 # generic register, register || #imm virtual resolver, resolve to rr or imm depending on operand types
 def rr_imm_virtual_resolver(a, b, c, rr, imm):
@@ -225,6 +233,8 @@ virtual = {
 	"extern": {"args": [1], "resolve": extern_virtual},
 	"jmp": {"args": [1], "resolve": jmp_virtual_instruction},
 	"jmpabs": {"args": [1], "resolve": jmpabs_virtual_instruction},
+	"out": {"args": [2], "resolve": out_virtual_instruction},
+	"in": {"args": [2], "resolve": in_virtual_instruction},
 	"db": {"args": False, "resolve": lambda *operands: dd_virtual(1, *operands)},
 	"dw": {"args": False, "resolve": lambda *operands: dd_virtual(2, *operands)},
 	"dd": {"args": False, "resolve": lambda *operands: dd_virtual(4, *operands)},

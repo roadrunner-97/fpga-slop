@@ -14,6 +14,7 @@ module core
     addr_t sp_next;
     addr_t sp_next_override;
     instruction_t current_instruction;
+    int_code_t exception_reason;
     decoded_instruction_t controls;
 
 // ram controls
@@ -24,6 +25,9 @@ module core
     addr_t ram_wr_addr;
     word_t ram_wr_data;
     logic ram_wr_enable;
+
+    tsc_t tsc;
+    tsc_t tsc_next;
 
     addr_t ram_wr_addr_override;
     word_t ram_wr_data_override;
@@ -56,6 +60,18 @@ module core
     word_t reg_wr_data_override = '0;
     logic reg_wr_enable_override = '0;
 
+// interrupt wires
+    logic interrupt_pin;
+    logic ignore_interrupt_pin;
+
+// io wires
+    io_addr_t io_read_select;
+    word_t io_read_data;
+
+    io_addr_t io_wr_select;
+    word_t io_wr_data;
+    logic io_wr_enable;
+
     mmap #(
         .RAM_SIZE(1024),
         .FILE("src/program.hex")
@@ -74,6 +90,17 @@ module core
         .in(current_instruction),
 	.stalled(idc_stalled),
         .out(controls)
+    );
+
+    pit pit(
+        .clock(clock),
+	.reset(reset),
+	.interrupt(interrupt_pin),
+	.read_select(io_read_select),
+	.read_data(io_read_data),
+        .write_select(io_wr_select),
+        .write_data(io_wr_data),
+        .write_enable(io_wr_enable)
     );
 
     registers registers(
@@ -115,19 +142,38 @@ module core
 	    ram_wr_data_override <= '0;
 	    ram_wr_enable_override <= '0;
             core_state <= FETCH;
+            tsc <= '0;
+            tsc_next <= '0;
+	    ignore_interrupt_pin <= '0;
         end else begin
             case(core_state)
                 FETCH: begin
-			if (controls.exception) begin
-				core_state <= EXCEPTION;
-				idc_stalled = '1;
+		    	tsc <= tsc_next;
+			if (controls.exception) begin // this is very repetetive
+				core_state <= INTERRUPT_0;
+				idc_stalled <= '1;
 				interrupting <= '1;
+				sp_next_override = sp - 1;
+				ram_wr_addr_override = sp - 1;
+				ram_wr_data_override = 32'(controls.exception_reason);
+				ram_wr_enable_override = '1;
+				ignore_interrupt_pin = '1;
+			end else if (interrupt_pin && (ignore_interrupt_pin == '0)) begin
+				core_state <= INTERRUPT_0;
+				idc_stalled <= '1;
+				interrupting <= '1;
+				sp_next_override = sp - 1;
+				ram_wr_addr_override = sp - 1;
+				ram_wr_data_override = 32'(INT_HW);
+				ram_wr_enable_override = '1;
+				ignore_interrupt_pin = '1;
 			end else begin
 				core_state <= EXECUTE; // this cycle we just loaded the instruction from memory
 			end
                 end
 
                 EXECUTE: begin
+		    tsc_next <= tsc + 1;
                     if(controls.mem_read || controls.mem_write) begin
                         core_state <= TRANSFER;
                     end else begin
@@ -143,45 +189,23 @@ module core
 		    sp <= sp_next;
                 end
 
-		EXCEPTION: begin
-			core_state <= INTERRUPT_0;
-			sp_next_override = sp - 1;
-			ram_wr_addr_override = sp - 1;
-			ram_wr_data_override = 16'(controls.exception_reason);
-			ram_wr_enable_override = '1;
-		end
-
 		INTERRUPT_0: begin
 			core_state <= INTERRUPT_1;
-			ram_wr_enable_override = '0;
+			sp_next_override = sp_next - 1;
+			reg_rd1_override = CTRL_IVA;
+			ram_wr_addr_override = sp_next - 1;
+			ram_wr_data_override = 32'(pc);
+			ram_wr_enable_override = '1;
 			sp = sp_next;
 		end
 
 		INTERRUPT_1: begin
-			core_state = INTERRUPT_2;
-			sp_next_override = sp - 1;
-			ram_wr_addr_override = sp - 1;
-			ram_wr_data_override = 16'(pc);
-			ram_wr_enable_override = '1;
-		end
-
-		INTERRUPT_2: begin
-			core_state = INTERRUPT_3;
-			sp = sp_next;
-			reg_rd1_override = CTRL_IVA;
-			reg_wr_enable_override = '0;
-		end
-
-		INTERRUPT_3: begin
-			core_state = INTERRUPT_4;
-			pc = reg_rd1_data;
-			reg_wr_enable_override = '0;
-			reg_wr_select_override = '0;
-			reg_wr_data_override = '0;
-		end
-
-		INTERRUPT_4: begin
 			core_state = EXECUTE;
+			pc = reg_rd1_data;
+			ram_wr_addr_override = '0;
+			ram_wr_data_override = '0;
+			ram_wr_enable_override = '0;
+			sp = sp_next;
 			idc_stalled = '0;
 			interrupting = '0;
 		end
@@ -192,6 +216,12 @@ module core
     always_comb begin
 	pc_next = pc + 1;
 	sp_next = sp;
+
+	io_read_select = '0;
+
+	io_wr_select = '0;
+	io_wr_data = '0;
+	io_wr_enable = '0;
 
 	reg_wr_enable = '0;
 	reg_wr_select = '0;
@@ -258,21 +288,33 @@ module core
         end
 
         if(controls.mem_read) begin
-		if (controls.opcode == OP_LD) begin
-			ram_rd_addr = addr_t'(reg_rd1_data + controls.immediate);
-		end else begin
-			ram_rd_addr = sp;
-			sp_next = sp + 1;
-		end
-		reg_wr_data = ram_rd_data;
+		case (controls.opcode)
+			OP_LD: begin
+				ram_rd_addr = addr_t'(reg_rd1_data + controls.immediate);
+				reg_wr_data = ram_rd_data;
+			end
+
+			OP_IRET: begin
+				ram_rd_addr = sp + 0;
+				pc_next = ram_rd_data;
+				sp_next = sp + 2;
+				ignore_interrupt_pin = '0;
+			end
+
+			OP_POP: begin
+				ram_rd_addr = sp;
+				reg_wr_data = ram_rd_data;
+				sp_next = sp + 1;
+			end
+		endcase
         end
 
         if(controls.mem_write && core_state == TRANSFER) begin
 		if (controls.opcode == OP_ST) begin
 			ram_wr_addr = reg_rd2_data + controls.immediate;
 		end else begin
-			sp_next = sp - 1;
 			ram_wr_addr = sp - 1;
+			sp_next = sp - 1;
 		end
 		ram_wr_enable = '1;
 		ram_wr_data = reg_rd1_data;
@@ -281,19 +323,30 @@ module core
 	if (controls.opcode == OP_STS) begin
 	    sp = reg_rd1_data;
 	end
-	if (controls.opcode == OP_LDS) begin
-	    reg_wr_data = sp;
+
+	// reg_wr_data special cases, dedicated controls flag rather than long if ?
+	if (controls.opcode == OP_LDC || controls.opcode == OP_STC || controls.opcode == OP_LDI || controls.opcode == OP_LDS) begin
+		case (controls.opcode)
+			OP_LDC: reg_wr_data = reg_rd1_data;
+			OP_STC: reg_wr_data = reg_rd2_data;
+			OP_LDI: reg_wr_data = controls.immediate;
+			OP_LDS: reg_wr_data = sp;
+		endcase
 	end
 
-	if (controls.opcode == OP_LDC) begin
-            reg_wr_data = reg_rd1_data;
-	end
-	if (controls.opcode == OP_STC) begin
-            reg_wr_data = reg_rd2_data;
-	end
-        if(controls.opcode == OP_LDI) begin
-            reg_wr_data = controls.immediate;
-        end
+	case (controls.opcode)
+		OP_LDIO: begin
+			io_read_select = reg_rd1_data;
+			reg_wr_data = io_read_data;
+			reg_wr_select = controls.reg_destination;
+			reg_wr_enable = '0;
+		end
+		OP_STIO: begin
+			io_wr_select = reg_rd2_data;
+			io_wr_data = reg_rd1_data;
+			io_wr_enable = '1;
+		end
+	endcase
     end
 
 

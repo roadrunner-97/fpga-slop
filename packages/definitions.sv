@@ -31,10 +31,13 @@ package definitions;
 	OP_STS  = 8'h1b, // for roadrunner: store stack
 	OP_PUSH = 8'h1c,
 	OP_POP  = 8'h1d,
-        OP_HALT  = 8'hFF
+	OP_IRET = 8'h1e,
+	OP_LDIO = 8'h1f, // for roadrunner: load I/O
+	OP_STIO = 8'h20, // for roadrunner: store I/O
+        OP_HALT = 8'hFF
     } opcode_t;
 
-    // special registers
+    // control registers
     typedef enum logic [7:0] {
         CTRL_IVA  = 8'h10,
         CTRL_IVR  = 8'h11,
@@ -77,6 +80,7 @@ package definitions;
     typedef logic [31:0] word_t;
     typedef logic [$clog2(REG_COUNT)-1:0]  reg_addr_t;
     typedef logic [$clog2(GPR_COUNT)-1:0]  insr_reg_addr_t;
+    typedef logic [31:0] tsc_t;
 
     // instruction fields (unpacked from a 32-bit instruction word)
     typedef struct packed {
@@ -109,5 +113,22 @@ package definitions;
         logic      halt;
 	logic      exception;
     } decoded_instruction_t;
+
+// I/O bus
+    typedef logic [31:0] io_addr_t;
+    typedef logic [31:0] io_data_t;
+
+// PIT
+    localparam int PIT_REGISTER_COUNT = 2;
+    localparam int PIT_FLAG_ACTIVE = 'b01;
+    localparam int PIT_FLAG_INTERRUPTING = 'b10;
+    localparam int PIT_IO_BASE = 32'h00000;
+    localparam int PIT_IO_END = 32'h00002;
+    typedef logic[1:0] pit_reg_t;
+
+    typedef enum logic [7:0] {
+        PIT_FLAG     = 8'h00,
+        PIT_DEADLINE = 8'h01
+    } pit_regs_t;
 
 endpackage

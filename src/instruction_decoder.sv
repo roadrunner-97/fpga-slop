@@ -37,7 +37,8 @@ module instruction_decoder
 			OP_NOP, OP_ADD, OP_ADDI, OP_SUB, OP_SUBI, OP_AND, OP_ANDI, OP_OR,
 			OP_ORI, OP_XOR, OP_XORI, OP_SHL, OP_SHLI, OP_SHR, OP_SHRI, OP_LD,
 			OP_ST,  OP_BEQ, OP_BLT,  OP_JMP, OP_JAL, OP_JREL, OP_LDI,  OP_LDC,
-			OP_STC, OP_LDS, OP_STS, OP_PUSH, OP_POP, OP_HALT: begin
+			OP_STC, OP_LDS, OP_STS, OP_PUSH, OP_POP, OP_IRET, OP_LDIO, OP_STIO,
+			OP_HALT: begin
 				out.exception = '0;
 			end
 
@@ -65,12 +66,12 @@ module instruction_decoder
 		endcase
 
 		case(in.opcode)
-			OP_LD, OP_ST, OP_BEQ, OP_BLT: begin
+			OP_LD, OP_ST, OP_BEQ, OP_BLT, OP_STIO: begin
 				out.reg_b = in.reg_destination;
 			end
 		endcase
 
-		if(in.opcode == OP_LD || in.opcode == OP_POP) out.mem_read = '1;
+		if(in.opcode == OP_LD || in.opcode == OP_POP || OP_IRET) out.mem_read = '1;
 		if(in.opcode == OP_ST || in.opcode == OP_PUSH) out.mem_write = '1;
 		if(in.opcode == OP_BEQ || in.opcode == OP_BLT) begin
 			out.immediate = in.operand.imm;

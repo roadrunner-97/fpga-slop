@@ -37,7 +37,7 @@ module mmap #(
 
     always_comb begin
         if (instruction_pointer < RAM_SIZE -1) begin
-            instruction_data = memory[instruction_pointer];
+            instruction_data = memory[instruction_pointer]; // is this legal????
         end else begin
             instruction_data = 'b0;
         end
