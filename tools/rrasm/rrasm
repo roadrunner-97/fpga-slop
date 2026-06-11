@@ -5,6 +5,12 @@ import argparse
 
 # python slop written as fast as possible
 
+WORD_SIZE = 2; # power of 2
+WORD_ADDRESSED = True; # for example: (with 4 byte words) word 2 starts at `0x00001` rather than `0x00004`
+ADDRESS_SHIFT = len(bin(WORD_SIZE - 1)[2:]); # change WORD_SIZE
+
+FPGASYNTH_WORD_SIZE = 2;
+
 # instruction encoding table
 encodings = {
 	"nop":	{"opcode": 0x00, "args": 0, "encoding": ""},
@@ -32,8 +38,14 @@ encodings = {
 	"ldi":	{"opcode": 0x17, "args": 2, "encoding": "di"},
 	"ldc":	{"opcode": 0x18, "args": 2, "encoding": "dc"},
 	"stc":	{"opcode": 0x19, "args": 2, "encoding": "Ca"},
+	"lds":	{"opcode": 0x1a, "args": 1, "encoding": "d"},
+	"sts":	{"opcode": 0x1b, "args": 1, "encoding": "a"},
+	"push":	{"opcode": 0x1c, "args": 1, "encoding": "a"},
+	"pop":	{"opcode": 0x1d, "args": 1, "encoding": "d"},
 	"halt":	{"opcode": 0xff, "args": 0, "encoding": ""},
 };
+
+VREG_SP = -1;
 
 # register table
 registers = {
@@ -61,6 +73,9 @@ registers = {
 	"r17": {"type": "ctrl", "value": 17},
 	"ivo": {"type": "ctrl", "value": 18},
 	"r18": {"type": "ctrl", "value": 18},
+
+	# virtual
+	"sp": {"type": "vreg", "value": VREG_SP},
 };
 
 # aliases
@@ -96,6 +111,15 @@ def mov_virtual_instruction(a, b):
 
 	if (a["type"] == "ctrl" and b["type"] == "reg"):
 		return {"type": "instruction", "name": "stc"};
+
+
+
+	if ((a["type"] == "vreg" and a["value"] == VREG_SP) and b["type"] == "reg"):
+		return {"type": "instruction", "name": "sts", "operands": [b]};
+
+	if (a["type"] == "reg" and (b["type"] == "vreg" and b["value"] == VREG_SP)):
+		return {"type": "instruction", "name": "lds", "operands": [a]};
+
 
 	return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
@@ -219,11 +243,16 @@ def null_pad(bin, padlen):
 def fpgasynth_format_transformer(bin):
 	output = b"";
 	words = splitn(bin, 2);
+	words = splitn(bin, FPGASYNTH_WORD_SIZE);
 	for word in words:
-		word = null_pad(word, 2);
-		high = hex(word[0])[2:].zfill(2).upper();
-		low = hex(word[1])[2:].zfill(2).upper();
-		output += bytes(high + low + "\n", "utf-8");
+		word = null_pad(word, FPGASYNTH_WORD_SIZE);
+		i = 0;
+		while (i < FPGASYNTH_WORD_SIZE): # fix endian
+			byte = hex(word[i])[2:].zfill(2).upper();
+			output += bytes(byte, "utf-8");
+			i += 1;
+		output += b"\n";
+
 	return output
 
 # transform bin to .mi format
@@ -485,7 +514,10 @@ def serialise_instruction(instruction, offset):
 				operand = {"type": "int", "value": vmembase};
 				if (letter == 'r'):
 					relative_unresolved = True;
-					unresolved.append({"type": "rel16", "symname": symname, "address": offset + 2, "relbase": vmembase + (offset >> 1)});
+					if (WORD_ADDRESSED):
+						unresolved.append({"type": "rel16", "symname": symname, "address": offset + 2, "relbase": vmembase + (offset >> ADDRESS_SHIFT)});
+					else:
+						unresolved.append({"type": "rel16", "symname": symname, "address": offset + 2, "relbase": vmembase + offset});
 				else:
 					unresolved.append({"type": "abs16", "symname": symname, "address": offset + 2});
 
@@ -522,7 +554,11 @@ def serialise_instruction(instruction, offset):
 			serialised[2] = (value >> 8) & 0xff;
 
 		if (letter == 'r' and relative_unresolved == False):
-			value = operand["value"] - (vmembase + (offset >> 1));
+			if (WORD_ADDRESSED):
+				value = operand["value"] - (vmembase + (offset >> ADDRESS_SHIFT));
+			else:
+				value = operand["value"] - (vmembase + offset);
+
 			if ((value < -0x7fff) or (value > 0x7fff)):
 				print(value, operand, vmembase, offset);
 				return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
@@ -552,7 +588,11 @@ def assemble_instruction(instruction, offset):
 		return decoded["value"];
 
 	if (decoded["type"] == "relsym"):
-		symbols[decoded["value"]] = vmembase + (offset >> 1);
+		if (WORD_ADDRESSED):
+			symbols[decoded["value"]] = vmembase + (offset >> ADDRESS_SHIFT);
+		else:
+			symbols[decoded["value"]] = vmembase + offset;
+
 		return b"";
 
 	if (decoded["type"] == "null"):

@@ -26,7 +26,11 @@ package definitions;
         OP_JREL = 8'h16,
         OP_LDI  = 8'h17,
 	OP_LDC  = 8'h18, // for roadrunner: load control
-	OP_STC  = 8'h19, // for roadrunner: store controle
+	OP_STC  = 8'h19, // for roadrunner: store control
+	OP_LDS  = 8'h1a, // for roadrunner: load stack
+	OP_STS  = 8'h1b, // for roadrunner: store stack
+	OP_PUSH = 8'h1c,
+	OP_POP  = 8'h1d,
         OP_HALT  = 8'hFF
     } opcode_t;
 
@@ -93,10 +97,6 @@ package definitions;
         reg_addr_t reg_destination;
         reg_addr_t reg_a;
         reg_addr_t reg_b;
-
-        addr_t     wr_select;
-        word_t     wr_data;
-        logic      wr_enable;
 
         word_t     immediate;
 	int_code_t exception_reason;

@@ -4,12 +4,6 @@ module instruction_decoder
 (
     input instruction_t in,
     input logic stalled,
-    input word_t rd1_override,
-    input word_t rd2_override,
-
-    input addr_t wr_select_override = '0,
-    input word_t wr_data_override = '0,
-    input logic wr_enable_override = '0,
 
     output decoded_instruction_t out
 );
@@ -19,10 +13,6 @@ module instruction_decoder
 	out.reg_destination = in.reg_destination;
 	out.reg_a = in.reg_a;
 	out.reg_b = in.operand.r.rb;
-
-	out.wr_select = '0;
-	out.wr_data = '0;
-	out.wr_enable = '0;
 
 	out.immediate = '0;
 	out.use_immediate = '0;
@@ -39,7 +29,7 @@ module instruction_decoder
 		case(in.opcode)
 			OP_ADD, OP_ADDI, OP_SUB, OP_SUBI, OP_AND, OP_ANDI, OP_OR, OP_ORI,
 			OP_XOR, OP_XORI, OP_SHL, OP_SHLI, OP_SHR, OP_SHRI, OP_LD, OP_LDI,
-			OP_JAL, OP_LDC:
+			OP_JAL, OP_LDC, OP_STC, OP_LDS, OP_POP:
 				out.reg_writeback = '1;
 		endcase
 
@@ -47,7 +37,7 @@ module instruction_decoder
 			OP_NOP, OP_ADD, OP_ADDI, OP_SUB, OP_SUBI, OP_AND, OP_ANDI, OP_OR,
 			OP_ORI, OP_XOR, OP_XORI, OP_SHL, OP_SHLI, OP_SHR, OP_SHRI, OP_LD,
 			OP_ST,  OP_BEQ, OP_BLT,  OP_JMP, OP_JAL, OP_JREL, OP_LDI,  OP_LDC,
-			OP_STC, OP_HALT: begin
+			OP_STC, OP_LDS, OP_STS, OP_PUSH, OP_POP, OP_HALT: begin
 				out.exception = '0;
 			end
 
@@ -80,8 +70,8 @@ module instruction_decoder
 			end
 		endcase
 
-		if(in.opcode == OP_LD) out.mem_read = '1;
-		if(in.opcode == OP_ST) out.mem_write = '1;
+		if(in.opcode == OP_LD || in.opcode == OP_POP) out.mem_read = '1;
+		if(in.opcode == OP_ST || in.opcode == OP_PUSH) out.mem_write = '1;
 		if(in.opcode == OP_BEQ || in.opcode == OP_BLT) begin
 			out.immediate = in.operand.imm;
 			out.branch = '1;
@@ -94,11 +84,8 @@ module instruction_decoder
 	end else begin
 		out.opcode = OP_NOP;
 		out.reg_destination = '0;
-		out.reg_a = rd1_override;
-		out.reg_b = rd2_override;
-		out.wr_select = wr_select_override;
-		out.wr_data = wr_data_override;
-		out.wr_enable = wr_enable_override;
+		out.reg_a = '0;
+		out.reg_b = '0;
 		out.immediate = '0;
 		out.use_immediate = '0;
 		out.mem_read = '0;
