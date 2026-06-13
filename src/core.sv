@@ -169,20 +169,20 @@ module core
 				core_state <= INTERRUPT_0;
 				idc_stalled <= '1;
 				interrupting <= '1;
-				sp_next_override = sp - 1;
-				ram_wr_addr_override = sp - 1;
-				ram_wr_data_override = 32'(controls.exception_reason);
-				ram_wr_enable_override = '1;
-				ignore_interrupt_pin = '1;
+				sp_next_override <= sp - 1;
+				ram_wr_addr_override <= sp - 1;
+				ram_wr_data_override <= 32'(controls.exception_reason);
+				ram_wr_enable_override <= '1;
+				ignore_interrupt_pin <= '1;
 			end else if (interrupt_pin && (ignore_interrupt_pin == '0)) begin
 				core_state <= INTERRUPT_0;
 				idc_stalled <= '1;
 				interrupting <= '1;
-				sp_next_override = sp - 1;
-				ram_wr_addr_override = sp - 1;
-				ram_wr_data_override = 32'(INT_HW);
-				ram_wr_enable_override = '1;
-				ignore_interrupt_pin = '1;
+				sp_next_override <= sp - 1;
+				ram_wr_addr_override <= sp - 1;
+				ram_wr_data_override <= 32'(INT_HW);
+				ram_wr_enable_override <= '1;
+				ignore_interrupt_pin <= '1;
 			end else begin
 				core_state <= EXECUTE; // this cycle we just loaded the instruction from memory
 			end
@@ -207,23 +207,23 @@ module core
 
 		INTERRUPT_0: begin
 			core_state <= INTERRUPT_1;
-			sp_next_override = sp_next - 1;
-			reg_rd1_override = CTRL_IVA;
-			ram_wr_addr_override = sp_next - 1;
-			ram_wr_data_override = 32'(pc);
-			ram_wr_enable_override = '1;
-			sp = sp_next;
+			sp_next_override <= sp_next - 1;
+			reg_rd1_override <= CTRL_IVA;
+			ram_wr_addr_override <= sp_next - 1;
+			ram_wr_data_override <= 32'(pc);
+			ram_wr_enable_override <= '1;
+			sp <= sp_next;
 		end
 
 		INTERRUPT_1: begin
-			core_state = EXECUTE;
-			pc = reg_rd1_data;
-			ram_wr_addr_override = '0;
-			ram_wr_data_override = '0;
-			ram_wr_enable_override = '0;
-			sp = sp_next;
-			idc_stalled = '0;
-			interrupting = '0;
+			core_state <= EXECUTE;
+			pc <= reg_rd1_data;
+			ram_wr_addr_override <= '0;
+			ram_wr_data_override <= '0;
+			ram_wr_enable_override <= '0;
+			sp <= sp_next;
+			idc_stalled <= '0;
+			interrupting <= '0;
 		end
             endcase
         end
