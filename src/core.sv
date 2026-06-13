@@ -66,6 +66,7 @@ module core
 // interrupt wires
     wire interrupt_pin;
     logic ignore_interrupt_pin;
+    logic intpin_reset;
 
 // io wires
     io_addr_t io_read_select;
@@ -200,6 +201,9 @@ module core
                 end
 
                 TRANSFER: begin // stall
+		    if (intpin_reset) begin
+			ignore_interrupt_pin <= '0;
+		    end
                     core_state <= FETCH;
                     pc <= pc_next;
 		    sp <= sp_next;
@@ -232,6 +236,7 @@ module core
     always_comb begin
 	pc_next = pc + 1;
 	sp_next = sp;
+	intpin_reset = '0;
 
 	io_read_select = '0;
 
@@ -314,7 +319,7 @@ module core
 				ram_rd_addr = sp + 0;
 				pc_next = ram_rd_data;
 				sp_next = sp + 2;
-				ignore_interrupt_pin = '0;
+				intpin_reset = '1;
 			end
 
 			OP_POP: begin
@@ -337,7 +342,7 @@ module core
         end
 
 	if (controls.opcode == OP_STS) begin
-	    sp = reg_rd1_data;
+	    sp_next = reg_rd1_data;
 	end
 
 	// reg_wr_data special cases, dedicated controls flag rather than long if ?
