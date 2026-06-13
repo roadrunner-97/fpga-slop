@@ -18,8 +18,13 @@ ELF_OSABI_VERSION = 0x00; # this is osabi specific anyway
 ### default variable values
 
 vmembase = 0x0000; # default executable base
-entrypoint_name = "_start";
+entrypoint_name = "_start"; # default entry point
 pie = True; # default pie setting - also set by --no-pie
+output_format = "bin"; # default output format
+output_filename = "a.out"; # default output filename
+ignored_warnings = []; # ignored warnings
+export_all = False; # export all symbols?
+
 
 
 
@@ -107,6 +112,16 @@ unresolved = []; # unresolved symbols - same
 
 exports = []; # exports - same
 
+# print error
+def print_error(warntype, text, ignoreflag):
+	if (ignoreflag != False):
+		if (ignoreflag in ignored_warnings):
+			return;
+
+		print("%s: %s [-w %s]" % (warntype, text, ignoreflag));
+	else:
+		print("%s: %s");
+
 # `mov` instruction virtual overload resolver, resolve to st, ld, or ldi depending on operand types
 def mov_virtual_instruction(a, b):
 	if (a["type"] == "mem" and b["type"] == "reg"):
@@ -181,6 +196,7 @@ def serialise(bytesize, operand):
 	if (operand["type"] == "int" or operand["type"] == "sym"):
 		if (operand["type"] == "sym"):
 			if value not in symbols:
+				print_error("error", "serialise(): Lazily choosing to not defer symbol resolution, FIXME");
 				return {"type": "error", "value": ERR_SYM_NOT_FOUND};
 			value = symbols[value];
 
@@ -213,6 +229,9 @@ def org_virtual(origin):
 def extern_virtual(sym):
 	if (sym["type"] != "sym"):
 		return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
+
+	if (output_format != "elf"):
+		print_error("warning", "Encountered `extern` when assembling static binary, this is likely a mistake", "staticextern");
 
 	exports.append(sym["value"]);
 	return {"type": "null"};
@@ -308,16 +327,162 @@ def search_for_entrypoint():
 	if (entrypoint_name in symbols):
 		return symbols[entrypoint_name];
 
+	print_error("warning", "Entry point '%s' not found" % entrypoint_name, "noentry");
 	return 0x00000000;
+
+# rrisc relocation types
+RRISC_REL_16 = 0x00;
+RRISC_REL_PC16 = 0x01;
 
 # transform bin to .elf format
 def elf_format_transformer(bin):
+	elf_header_size = 0x34;
+	elf_pheader_size = 0x40; # len(program_header);
+
+	strtab = b"\x00.shstrtab\x00.dynstr\x00.dynsym\x00.comment\x00.text\x00.rel\x00";
+	dynsym = b"";
+	dynstr = b"";
+	rel = b"";
+	exported_symbols = 0;
+
+	dynsym_index = 0;
+	for sym in symbols.keys():
+		if (sym not in exports and export_all == False):
+			continue;
+
+		dynsym += struct.pack(">I", len(dynstr));
+		dynsym += struct.pack(">I", symbols[sym]);
+		dynsym += b"\x00\x00\x00\x00";
+		dynsym += b"\x11\x00\x00\x01";
+		
+		dynstr += bytes(sym, "utf-8");
+		dynstr += b"\x00";
+		dynsym_index += 1;
+		exported_symbols += 1;
+
+	unresolved_exported = [];
+	for sym in unresolved:
+		symname = sym["symname"];
+		if (symname not in exports and export_all == False):
+			return False;
+
+		name_index = len(dynstr);
+		if (symname in unresolved_exported):
+			name_index = dynstr.index(bytes(symname, "utf-8"));
+		else:
+			dynstr += bytes(symname, "utf-8");
+			dynstr += b"\x00";
+			unresolved_exported.append(symname);
+
+		dynsym += struct.pack(">I", name_index);
+		if (sym["type"] == "abs16"):
+			dynsym += b"\x00\x00\x00\x00";
+		else:
+			dynsym += struct.pack(">i", sym["relbase"]);
+		dynsym += b"\x00\x00\x00\x00";
+		dynsym += b"\x11\x00\x00\x00";
+
+		reltype = RRISC_REL_16 if (sym["type"] == "abs16") else RRISC_REL_PC16;
+		rel += struct.pack(">I", sym["address"]);
+		rel += b"\x00" + struct.pack(">H", dynsym_index) + bytes([reltype]);
+
+		dynsym_index += 1;
+		exported_symbols += 1;
+	
+	comment = b"rrisc assembler (rrasm v1.1)"
+
+	real_vmembase = (vmembase << ADDRESS_SHIFT) if WORD_ADDRESSED else vmembase;
+	section_header_entry_size = 0x28;
+	section_header_entry_count = 5 if (exported_symbols > 0) else 3;
+	if (len(rel) > 0):
+		section_header_entry_count += 1
+	elf_section_offset = elf_header_size + elf_pheader_size;
+	elf_section_data_offset = elf_header_size + elf_pheader_size + (section_header_entry_size * section_header_entry_count);
+	section_data_vmemaddr = real_vmembase + len(bin);
+
+	section_header = b"\x00\x00\x00\x1b"; # .comment
+	section_header += b"\x00\x00\x00\x01";
+	section_header += b"\x00\x00\x00\x05";
+	section_header += struct.pack(">I", section_data_vmemaddr + len(dynstr) + len(dynsym) + len(strtab));
+	section_header += struct.pack(">I", elf_section_data_offset + len(dynstr) + len(dynsym) + len(strtab));
+	section_header += struct.pack(">I", len(comment));
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+
+	section_header += b"\x00\x00\x00\x24"; # .text
+	section_header += b"\x00\x00\x00\x01";
+	section_header += b"\x00\x00\x00\x07";
+	section_header += struct.pack(">I", real_vmembase);
+	section_header += struct.pack(">I", elf_section_data_offset + len(dynstr) + len(dynsym) + len(strtab) + len(comment) + len(rel));
+	section_header += struct.pack(">I", len(bin));
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+
+	section_header += b"\x00\x00\x00\x01"; # .shstrtab
+	section_header += b"\x00\x00\x00\x03";
+	section_header += b"\x00\x00\x00\x07";
+	section_header += struct.pack(">I", section_data_vmemaddr + len(dynstr) + len(dynsym));
+	section_header += struct.pack(">I", elf_section_data_offset + len(dynstr) + len(dynsym));
+	section_header += struct.pack(">I", len(strtab));
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+	section_header += b"\x00\x00\x00\x00";
+
+	if (exported_symbols > 0):
+		section_header += b"\x00\x00\x00\x0b"; # .dynstr
+		section_header += b"\x00\x00\x00\x03";
+		section_header += b"\x00\x00\x00\x07";
+		section_header += struct.pack(">I", section_data_vmemaddr);
+		section_header += struct.pack(">I", elf_section_data_offset);
+		section_header += struct.pack(">I", len(dynstr));
+		section_header += b"\x00\x00\x00\x00";
+		section_header += b"\x00\x00\x00\x00";
+		section_header += b"\x00\x00\x00\x00";
+		section_header += b"\x00\x00\x00\x00";
+
+		section_header += b"\x00\x00\x00\x13"; # .dynsym
+		section_header += b"\x00\x00\x00\x0b";
+		section_header += b"\x00\x00\x00\x07";
+		section_header += struct.pack(">I", section_data_vmemaddr + len(dynstr));
+		section_header += struct.pack(">I", elf_section_data_offset + len(dynstr));
+		section_header += struct.pack(">I", len(dynsym));
+		section_header += b"\x00\x00\x00\x03";
+		section_header += b"\x00\x00\x00\x00";
+		section_header += b"\x00\x00\x00\x00";
+		section_header += b"\x00\x00\x00\x10";
+
+		if (len(rel) > 0):
+			section_header += b"\x00\x00\x00\x2a"; # .rel
+			section_header += b"\x00\x00\x00\x09";
+			section_header += b"\x00\x00\x00\x05";
+			section_header += struct.pack(">I", section_data_vmemaddr + len(dynstr) + len(dynsym) + len(strtab) + len(comment));
+			section_header += struct.pack(">I", elf_section_data_offset + len(dynstr) + len(dynsym) + len(strtab) + len(comment));
+			section_header += struct.pack(">I", len(rel));
+			section_header += b"\x00\x00\x00\x04";
+			section_header += b"\x00\x00\x00\x01";
+			section_header += b"\x00\x00\x00\x00";
+			section_header += b"\x00\x00\x00\x0c";
+
 	program_header = b"\x00\x00\x00\x01"; # type
-	program_header += b"\x00\x00\x00\x56"; # segment file offset
-	program_header += struct.pack(">I", vmembase); # virtual address
-	program_header += struct.pack(">I", vmembase); # physical address
+	program_header += struct.pack(">I", elf_section_data_offset + len(strtab) + len(dynstr) + len(dynsym) + len(comment) + len(rel)); # segment file offset
+	program_header += struct.pack(">I", real_vmembase); # virtual address
+	program_header += struct.pack(">I", real_vmembase); # physical address
 	program_header += struct.pack(">I", len(bin)); # segment file size
 	program_header += struct.pack(">I", len(bin)); # segment mem size
+	program_header += b"\x00\x00\x00\x07"; # protection flags
+	program_header += b"\x00\x00\x00\x00"; # alignment
+
+	program_header += b"\x00\x00\x00\x01"; # type
+	program_header += struct.pack(">I", elf_section_offset); # segment file offset
+	program_header += struct.pack(">I", section_data_vmemaddr); # virtual address
+	program_header += struct.pack(">I", section_data_vmemaddr); # physical address
+	program_header += struct.pack(">I", len(section_header) + len(dynstr) + len(dynsym) + len(strtab)); # segment file size
+	program_header += struct.pack(">I", len(section_header) + len(dynstr) + len(dynsym) + len(strtab)); # segment mem size
 	program_header += b"\x00\x00\x00\x07"; # protection flags
 	program_header += b"\x00\x00\x00\x00"; # alignment
 
@@ -328,15 +493,21 @@ def elf_format_transformer(bin):
 	header += b"\x00\x01" + struct.pack(">H", ELF_MACHINE_TYPE); # type | machine
 	header += b"\x00\x00\x00\x01"; # version
 	header += struct.pack(">I", search_for_entrypoint()); # entry
-	header += b"\x00\x00\x00\x34"; # program header file offset
-	header += b"\x00\x00\x00\x00"; # section header file offset
+	header += struct.pack(">I", elf_header_size); # program header file offset
+	header += struct.pack(">I", elf_header_size + elf_pheader_size); # section header file offset
 	header += b"\x00\x00\x00\x00"; # flags
-	header += b"\x00\x00\x00\x20"; # header size | program header entry size
-	header += b"\x00\x01\x00\x00"; # program header entries | section header entry size
-	header += b"\x00\x00\x00\x00"; # section header entries | section header string table index
+	header += struct.pack(">H", elf_header_size) + b"\x00\x20"; # header size | program header entry size
+	header += struct.pack(">H", int(elf_pheader_size / 0x20)) + b"\x00\x28"; # program header entries | section header entry size
+	header += struct.pack(">H", section_header_entry_count) + b"\x00\x02"; # section header entries | section header string table index
 
 	output = header;
 	output += program_header;
+	output += section_header;
+	output += dynstr;
+	output += dynsym;
+	output += strtab;
+	output += comment;
+	output += rel;
 	output += bin;
 	return output;
 
@@ -349,6 +520,7 @@ formats = {
 	"elf": elf_format_transformer,
 };
 
+# format option help text
 formats_help = "set output format [ %s ]" % (", ".join(formats.keys()));
 
 # error enum
@@ -359,6 +531,7 @@ ERR_INCORRECT_ARG_COUNT = 3;
 ERR_UNSUPPORTED_ARGS = 4;
 ERR_SERIALISATION_FAILED = 5;
 ERR_SYM_NOT_FOUND = 6;
+ERR_SYM_REDEFINED = 7;
 
 ERR_GENERIC = -0xff;
 
@@ -495,6 +668,10 @@ def decode_symbol(symbol):
 
 	name = words[0];
 	value = decode_int_helper(words[2]);
+	if (name in symbols):
+		print_error("error", "Redefined symbol %s" % name);
+		return {"type": "error", "value": ERR_SYM_REDEFINED};
+
 	symbols[name] = value;
 	return {"type": "null"};
 
@@ -639,7 +816,7 @@ def serialise_instruction(instruction, offset):
 				value = operand["value"] - (vmembase + offset);
 
 			if ((value < -0x7fff) or (value > 0x7fff)):
-				print(value, operand, vmembase, offset);
+				print_error("error", "could not encode relative reference, %s outside int16_t limits" % value);
 				return {"type": "error", "value": ERR_UNSUPPORTED_ARGS};
 
 			packed = struct.pack(">h", value);
@@ -667,10 +844,15 @@ def assemble_instruction(instruction, offset):
 		return decoded["value"];
 
 	if (decoded["type"] == "relsym"):
+		symname = decoded["value"];
+		if (symname in symbols):
+			print_error("error", "Redefined symbol %s" % symname);
+			return {"type": "error", "value": ERR_SYM_REDEFINED};
+
 		if (WORD_ADDRESSED):
-			symbols[decoded["value"]] = vmembase + (offset >> ADDRESS_SHIFT);
+			symbols[symname] = vmembase + (offset >> ADDRESS_SHIFT);
 		else:
-			symbols[decoded["value"]] = vmembase + offset;
+			symbols[symname] = vmembase + offset;
 
 		return b"";
 
@@ -708,14 +890,9 @@ def err2name(code):
 	if (code == ERR_GENERIC):
 		return "ERR_GENERIC";
 
-# process `source`, assemble, write to `output` in `format`
-def process_file(source, output, format):
-	if (output == None):
-		output = "a.out";
-
-	if (format == None):
-		format = "bin";
-
+# process `source`, assemble, output to `output_file` in `output_format`
+def process_file(source):
+	global unresolved;
 	file = open(source, "r");
 	contents = file.read();
 	file.close();
@@ -732,10 +909,9 @@ def process_file(source, output, format):
 		stat = fixed_sym_decode_prepass(line);
 		if (stat["type"] != "null"):
 			if (stat["type"] == "error"):
-				print("%s on line %d" % (err2name(stat["value"]), linenum));
+				print_error("error", "%s on line %d" % (err2name(stat["value"]), linenum));
 			else:
-				print("unknown error on line %d" % linenum);
-				print(stat);
+				print_error("error", "unknown [ %s ] return value on line %d" % (""+stat, linenum));
 			return;
 		linenum += 1;
 
@@ -750,44 +926,58 @@ def process_file(source, output, format):
 		instruction = assemble_instruction(line, offset);
 		if (type(instruction) != bytes):
 			if (instruction["type"] == "error"):
-				print("%s on line %d" % (err2name(instruction["value"]), linenum));
+				print_error("error", "%s on line %d" % (err2name(instruction["value"]), linenum));
 			else:
-				print("unknown on line %d" % linenum);
-				print(stat);
+				print_error("error", "unknown [ %s ] return value on line %d" % (""+instruction, linenum));
 			return;
 
 		offset += len(instruction);
 		assembly += instruction;
 		linenum += 1;
 
+	new_unresolved = [];
 	for deferred in unresolved:
 		addr = deferred["address"];
 		symname = deferred["symname"];
 		if ((addr + 1) >= len(assembly)):
-			print("error");
+			print_error("error", "unresolved symbol extended past assembly");
 			return;
+	
+		if (symname not in symbols and symname in exports and output_format == "elf"):
+			new_unresolved.append(deferred);
+			continue; # this is fine, 
 
 		if (symname not in symbols):
-			print("Unresolved symbol '%s'" % symname);
+			if (symname in exports):
+				print_error("error", "Unresolved symbol '%s'" % symname);
+			else:
+				print_error("error", "Could not export symbol '%s' into %s (Did you forget to output an ELF?)" % (symname, output_filename));
 			return;
 
 		if (deferred["type"] == "abs16"):
 			assembly[addr:addr+2] = struct.pack(">H", symbols[symname]);
 		elif (deferred["type"] == "rel16"):
 			assembly[addr:addr+2] = struct.pack(">H", symbols[symname] - deferred["relbase"]);
+	
+	unresolved = new_unresolved;
 
 	assembly = bytes(assembly);
-	assembly = formats[format](assembly);
+	assembly = formats[output_format](assembly);
 
-	ofile = open(output, "wb");
+	if (assembly == False):
+		print_error("error", "Output formatting error.");
+		return;
+
+	ofile = open(output_filename, "wb");
 	ofile.write(assembly);
 	ofile.close();
 
+# set vmembase from string
 def set_vmembase(origin):
 	global vmembase;
 	decoded = decode_int_helper(origin);
 	if (decoded == False):
-		print("Could not set origin, bad integer, origin");
+		print_error("error", "Could not set origin, bad integer");
 		exit();
 
 	vmembase = decoded;
@@ -799,11 +989,20 @@ if __name__ == "__main__":
 	parser.add_argument("-f", "--format", help=formats_help);
 	parser.add_argument("-b", "--origin");
 	parser.add_argument("-e", "--entry-point");
+	parser.add_argument("-w", "--ignore-warning");
+	parser.add_argument("-E", "--export-all", action="store_true");
 	parser.add_argument("-s", "--no-pie", action="store_true");
 	args = parser.parse_args();
 	pie = not args.no_pie;
+	export_all = args.export_all;
 	if (args.origin != None):
 		set_vmembase(args.origin);
 	if (args.entry_point != None):
 		entrypoint_name = args.entry_point;
-	process_file(args.source, args.output, args.format);
+	if (args.ignore_warning != None):
+		ignored_warnings = [i.strip() for i in args.ignore_warning.split(",")];
+	if (args.format != None):
+		output_format = args.format;
+	if (args.output != None):
+		output_filename = args.output;
+	process_file(args.source);
