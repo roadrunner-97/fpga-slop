@@ -5,12 +5,12 @@ module core_tb;
 
     logic clock;
     logic reset;
-    logic [7:0] output_data;
+    word_t output_data;
 
     core dut (
         .clock (clock),
         .reset (reset),
-        .output_byte(output_data)
+        .output_word(output_data)
     );
 
     initial clock = 0;
