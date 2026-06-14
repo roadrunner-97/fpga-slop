@@ -9,8 +9,8 @@ version=1.0
 [Config]
 Area=true
 BYTE_SIZE=0
-DEPTH_A=24
-DEPTH_B=24
+DEPTH_A=16184
+DEPTH_B=16184
 DIMENSION_MATCH=65
 LANG=0
 MEM_FILE=../hardware/program.mi

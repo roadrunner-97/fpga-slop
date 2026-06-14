@@ -32,7 +32,7 @@ module top (
 
     wire slow_clock;
     clock_divider
-        #(.downclock_ratio(33554432)) digit_selecter(
+        #(.downclock_ratio(4194304)) digit_selecter(
         .in_clock(clk),
         .reset(rst),
         .out_clock(slow_clock)

@@ -11,15 +11,14 @@ module core
     addr_t pc;
     addr_t pc_next;
     instruction_t current_instruction;
+    instruction_t instruction_reg;
     decoded_instruction_t controls;
 
 // ram controls
 
-    addr_t ram_rd_addr;
-    word_t ram_rd_data;
-
-    addr_t ram_wr_addr;
-    word_t ram_wr_data;
+    addr_t ram_address;
+    word_t ram_read_data;
+    word_t ram_write_data;
     logic ram_wr_enable;
 
 // register controls
@@ -46,13 +45,10 @@ module core
         .FILE("src/program.hex")
     ) mmap(
         .clock(clock),
-        .write_address(ram_wr_addr),
-        .write_data(ram_wr_data),
-        .write_enable(ram_wr_enable),
-        .read_address(ram_rd_addr),
-        .read_data(ram_rd_data),
-        .instruction_pointer(pc),
-        .instruction_data(current_instruction)
+        .memory_address(ram_address),
+        .memory_read_data(ram_read_data),
+        .memory_write_data(ram_write_data),
+        .write_enable(ram_wr_enable)
     );
 
     instruction_decoder idc(
@@ -83,7 +79,6 @@ module core
 
     assign curr_opcode = controls.opcode;
     word_t debug;
-    assign output_byte = debug;
 
 
     cpu_core_state_t core_state;
@@ -115,8 +110,17 @@ module core
         end
     end
 
+    // capture the fetched instruction during EXECUTE so the decoded controls
+    // stay stable through TRANSFER (where stores still need them)
+    always_ff @(posedge clock) begin
+        if(core_state == EXECUTE) begin
+            instruction_reg <= ram_read_data;
+        end
+    end
+
     always_comb begin
         output_byte = debug[7:0];
+        current_instruction = instruction_reg;
         pc_next = pc + 1;
 
         reg_wr_enable = '0;
@@ -126,12 +130,20 @@ module core
         reg_rd1_select = controls.reg_a;
         reg_rd2_select = controls.reg_b;
 
-        ram_rd_addr = '0;
-        ram_wr_addr = '0;
-        ram_wr_data = '0;
+        ram_address = '0;
         ram_wr_enable = '0;
+        ram_write_data = '0;
 
         alu_input_a = reg_rd1_data;
+
+        if(core_state == FETCH) begin
+            ram_address = pc;
+            ram_wr_enable = 'b0;
+        end
+
+        if(core_state == EXECUTE) begin
+            current_instruction = ram_read_data;
+        end
 
         if(controls.reg_writeback && core_state == EXECUTE ||
            controls.opcode == OP_LD && core_state == TRANSFER) begin
@@ -168,15 +180,15 @@ module core
             end
         end
 
-        if(controls.mem_read) begin
-            ram_rd_addr = addr_t'(reg_rd1_data + controls.immediate);
-            reg_wr_data = ram_rd_data;
+        if(controls.mem_read && core_state != FETCH ) begin //we can't be doing memory access during PC fetch state
+            ram_address = addr_t'(reg_rd1_data + controls.immediate);
+            reg_wr_data = ram_read_data;
         end
 
         if(controls.mem_write && core_state == TRANSFER) begin
-            ram_wr_addr = reg_rd2_data + controls.immediate;
+            ram_address = reg_rd2_data + controls.immediate;
             ram_wr_enable = '1;
-            ram_wr_data = reg_rd1_data;
+            ram_write_data = reg_rd1_data;
         end
 
         if(controls.opcode == OP_LDI) begin

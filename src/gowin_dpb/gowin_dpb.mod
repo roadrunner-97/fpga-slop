@@ -12,8 +12,8 @@
 -file_type vlg
 -bram_b true
 -dev_type GW5A-25A
--depth_0 24
--depth_1 24
+-depth_0 16184
+-depth_1 16184
 -width_0 32
 -width_1 32
 -read_mode_0 bypass

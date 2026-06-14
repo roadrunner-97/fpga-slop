@@ -5,7 +5,7 @@
 //Part Number: GW5A-LV25MG121NC1/I0
 //Device: GW5A-25
 //Device Version: A
-//Created Time: Sun Jun 14 12:01:01 2026
+//Created Time: Sun Jun 14 13:18:06 2026
 
 //Change the instance name and port connections to the signal names
 //--------Copy here to design--------
@@ -23,9 +23,9 @@
         .ceb(ceb), //input ceb
         .resetb(resetb), //input resetb
         .wreb(wreb), //input wreb
-        .ada(ada), //input [4:0] ada
+        .ada(ada), //input [13:0] ada
         .dina(dina), //input [31:0] dina
-        .adb(adb), //input [4:0] adb
+        .adb(adb), //input [13:0] adb
         .dinb(dinb) //input [31:0] dinb
     );
 
