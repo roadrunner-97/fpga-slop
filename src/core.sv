@@ -68,7 +68,8 @@ module core
         .read_2_data(reg_rd2_data),
         .write_select(reg_wr_select),
         .write_data(reg_wr_data),
-        .write_enable(reg_wr_enable)
+        .write_enable(reg_wr_enable),
+        .debug(debug)
     );
 
     alu alu(
@@ -81,7 +82,8 @@ module core
     );
 
     assign curr_opcode = controls.opcode;
-    assign output_byte = pc[7:0];
+    word_t debug;
+    assign output_byte = debug;
 
 
     cpu_core_state_t core_state;
@@ -114,7 +116,8 @@ module core
     end
 
     always_comb begin
-        pc_next = pc + 2;
+        output_byte = debug[7:0];
+        pc_next = pc + 1;
 
         reg_wr_enable = '0;
         reg_wr_select = '0;
@@ -153,7 +156,7 @@ module core
                     reg_wr_data = pc + 1;
                 end
                 OP_JREL: begin
-                    pc_next = pc + $signed(controls.immediate);
+                    pc_next = pc + 32'($signed(controls.immediate[15:0]));
                 end
             endcase
         end
@@ -161,7 +164,7 @@ module core
         if(controls.branch) begin
             if((controls.opcode == OP_BEQ && alu_equal) || 
                (controls.opcode == OP_BLT && alu_less_than)) begin
-                    pc_next = pc + $signed(controls.immediate);
+                    pc_next = pc + 32'($signed(controls.immediate[15:0]));
             end
         end
 
