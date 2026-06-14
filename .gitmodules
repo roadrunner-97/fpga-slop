@@ -1,0 +1,3 @@
+[submodule "rrisc-toolchain"]
+	path = rrisc-toolchain
+	url = https://github.com/lemonorangelime/rrisc-toolchain.git

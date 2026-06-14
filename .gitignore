@@ -3,9 +3,5 @@ impl
 *.egg-info/
 __pycache__/
 .venv/
-src/placeable_hardware/*
 *.gprj.*
-
-src/program.hex
-
 *.user
