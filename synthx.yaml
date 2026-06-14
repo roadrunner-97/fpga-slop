@@ -28,6 +28,8 @@ modules:
   pulse_generator:      {}
   edge_detector:        {}
   clock_synchroniser:   {}
+  pit:                  { deps: [definitions] }
+  ioconnector:          { deps: [definitions] }
   hex_display:          { deps: [clock_divider] } # instantiates clock_divider
   # top:                  { src: src/main.v }       # non-default extension; no testbench
-  core:                 { deps: [definitions, alu, registers, mmap, instruction_decoder],  data: [src/program.hex]}
+  core:                 { deps: [definitions, alu, registers, mmap, instruction_decoder, pit, ioconnector],  data: [src/program.hex]}
