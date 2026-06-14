@@ -1,6 +1,6 @@
 PREFIX?=/usr/local/bin/
 
-SRC:=rrasm.py
+SRC:=rrasm
 PATHNAME:=rrasm
 
 default:
