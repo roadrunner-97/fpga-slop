@@ -18,6 +18,11 @@ ELF_MACHINE_TYPE = 0x23; # our (unrecognised, non-standard) machine type
 ELF_OSABI_TYPE = 0x80; # out (unrecognised, non-standard) OS/ABI type
 ELF_OSABI_VERSION = 0x00; # this is osabi specific anyway
 ELF_COMMENT = b"rrisc assembler (rrasm v1.1)"; # elf comment
+ELF_RRISC_REL_8 = 0x00; # rrisc arch relocation types
+ELF_RRISC_REL_16 = 0x01;
+ELF_RRISC_REL_32 = 0x02;
+ELF_RRISC_REL_64 = 0x03;
+ELF_RRISC_REL_PC16 = 0x80;
 
 ### default variable values
 
@@ -339,13 +344,6 @@ def search_for_entrypoint():
 	print_error("warning", "Entry point '%s' not found" % entrypoint_name, "noentry");
 	return 0x00000000;
 
-# rrisc relocation types
-RRISC_REL_8 = 0x00;
-RRISC_REL_16 = 0x00;
-RRISC_REL_32 = 0x00;
-RRISC_REL_64 = 0x00;
-RRISC_REL_PC16 = 0x01;
-
 # transform bin to .elf format
 def elf_format_transformer(bin):
 	elf_header_size = 0x34;
@@ -395,13 +393,15 @@ def elf_format_transformer(bin):
 		dynsym += b"\x11\x00\x00\x00";
 
 		absreltypes = {
-			"abs8": RRISC_REL_8,
-			"abs16": RRISC_REL_16,
-			"abs32": RRISC_REL_32,
-			"abs64": RRISC_REL_64,
+			"abs8": ELF_RRISC_REL_8,
+			"abs16": ELF_RRISC_REL_16,
+			"abs32": ELF_RRISC_REL_32,
+			"abs64": ELF_RRISC_REL_64,
+
+			"rel16": ELF_RRISC_REL_PC16,
 		};
 
-		reltype = absreltypes[sym["type"]] if (sym["type"] == "abs16") else RRISC_REL_PC16;
+		reltype = absreltypes[sym["type"]];
 		rel += struct.pack(">I", sym["address"]);
 		rel += b"\x00" + struct.pack(">H", dynsym_index) + bytes([reltype]);
 
