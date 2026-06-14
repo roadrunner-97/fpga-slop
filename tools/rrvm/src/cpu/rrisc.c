@@ -9,7 +9,7 @@
 
 void rrisc_cpu_write_wrapper(bus_t * bus, uint32_t address, void * buffer, size_t bytes) {
 	if (option_trace) {
-		printf("write %p, %p, %d\n", address, buffer, bytes);
+		printf("%s write %p, %p, %d\n", bus->type == BUS_IO ? "io" : "mem", address, buffer, bytes);
 	}
 	if (!bus) {
 		return;
@@ -18,7 +18,7 @@ void rrisc_cpu_write_wrapper(bus_t * bus, uint32_t address, void * buffer, size_
 }
 void rrisc_cpu_read_wrapper(bus_t * bus, uint32_t address, void * buffer, size_t bytes) {
 	if (option_trace) {
-		printf("read %p, %p, %d\n", address, buffer, bytes);
+		printf("%s read %p, %p, %d\n", bus->type == BUS_IO ? "io" : "mem", address, buffer, bytes);
 	}
 	if (!bus) {
 		memset(buffer, 0, bytes);
@@ -32,17 +32,20 @@ void rrisc_cpu_fetch(rrisc_cpu_t * rrisc_cpu, rrisc_instruction_t * instruction)
 }
 
 #define REGISTER(x) rrisc_cpu->registers.regs[x]
+#define RREGISTER(x) ntohl(rrisc_cpu->registers.regs[x])
+#define CTRLREGISTER(x) rrisc_cpu->registers.ctrl[x]
+#define RCTRLREGISTER(x) ntohl(rrisc_cpu->registers.ctrl[x])
 #define IMM(x) ntohs(x)
-#define BUS_READ(bus, dest, src, offset) rrisc_cpu_read_wrapper(bus, src + offset, &dest, sizeof(dest))
+#define BUS_READ(bus, dest, src, offset) rrisc_cpu_read_wrapper(bus, src + offset, &dest, sizeof(src))
 #define BUS_WRITE(bus, dest, src, offset) rrisc_cpu_write_wrapper(bus, dest + offset, &src, sizeof(dest))
 
 void dump_registers(rrisc_cpu_t * rrisc_cpu) {
 	for (int i = 0; i < 8; i++) {
-		printf(" r%d=0x%.8x ", i, REGISTER(i));
+		printf(" r%d=0x%.8x ", i, RREGISTER(i));
 	}
 	printf("\n");
 	for (int i = 0; i < 8; i++) {
-		printf("%sr%d=0x%.8x ", (i < 2) ? " " : "", i + 8, REGISTER(i + 8));
+		printf("%sr%d=0x%.8x ", (i < 2) ? " " : "", i + 8, RREGISTER(i + 8));
 	}
 	printf("\n pc=0x%.8x  sp=0x%.8x tsc=0x%.8x\n", rrisc_cpu->registers.pc, rrisc_cpu->registers.sp, rrisc_cpu->registers.tsc);
 	printf("\n\n");
@@ -59,48 +62,74 @@ void rrisc_cpu_clock(cpu_t * cpu) {
 	}
 
 	uint32_t pc_next = rrisc_cpu->registers.pc + 1;
+	uint32_t sp_next = rrisc_cpu->registers.sp;
 
 	// lazy decoding, quite repetitive but also very flexible
 	switch (instruction.opcode) {
 		case OP_NOP: break;
-		case OP_ADD: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) + REGISTER(instruction.reg_b); break;
-		case OP_SUB: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) - REGISTER(instruction.reg_b); break;
-		case OP_AND: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) & REGISTER(instruction.reg_b); break;
-		case OP_OR: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) | REGISTER(instruction.reg_b); break;
-		case OP_XOR: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) ^ REGISTER(instruction.reg_b); break;
-		case OP_SHL: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) << REGISTER(instruction.reg_b); break;
-		case OP_SHR: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) >> REGISTER(instruction.reg_b); break;
+		case OP_ADD: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) + RREGISTER(instruction.reg_b)); break;
+		case OP_SUB: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) - RREGISTER(instruction.reg_b)); break;
+		case OP_AND: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) & RREGISTER(instruction.reg_b)); break;
+		case OP_OR: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) | RREGISTER(instruction.reg_b)); break;
+		case OP_XOR: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) ^ RREGISTER(instruction.reg_b)); break;
+		case OP_SHL: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) << RREGISTER(instruction.reg_b)); break;
+		case OP_SHR: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) >> RREGISTER(instruction.reg_b)); break;
 
-		case OP_ADDI: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) + IMM(instruction.imm); break;
-		case OP_SUBI: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) - IMM(instruction.imm); break;
-		case OP_ANDI: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) & IMM(instruction.imm); break;
-		case OP_ORI: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) | IMM(instruction.imm); break;
-		case OP_XORI: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) ^ IMM(instruction.imm); break;
-		case OP_SHLI: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) << IMM(instruction.imm); break;
-		case OP_SHRI: REGISTER(instruction.dest) = REGISTER(instruction.reg_a) >> IMM(instruction.imm); break;
+		case OP_ADDI: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) + IMM(instruction.imm)); break;
+		case OP_SUBI: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) - IMM(instruction.imm)); break;
+		case OP_ANDI: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) & IMM(instruction.imm)); break;
+		case OP_ORI: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) | IMM(instruction.imm)); break;
+		case OP_XORI: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) ^ IMM(instruction.imm)); break;
+		case OP_SHLI: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) << IMM(instruction.imm)); break;
+		case OP_SHRI: REGISTER(instruction.dest) = htonl(RREGISTER(instruction.reg_a) >> IMM(instruction.imm)); break;
 
-		case OP_LD: BUS_READ(rrisc_cpu->mem_bus, REGISTER(instruction.dest), REGISTER(instruction.reg_a), IMM(instruction.imm)); break;
-		case OP_ST: BUS_WRITE(rrisc_cpu->mem_bus, REGISTER(instruction.dest), REGISTER(instruction.reg_a), IMM(instruction.imm)); break;
+		case OP_LD: BUS_READ(rrisc_cpu->mem_bus, REGISTER(instruction.dest), RREGISTER(instruction.reg_a), IMM(instruction.imm)); break;
+		case OP_ST: BUS_WRITE(rrisc_cpu->mem_bus, RREGISTER(instruction.dest), REGISTER(instruction.reg_a), IMM(instruction.imm)); break;
 
 		case OP_BEQ:
-			if (REGISTER(instruction.dest) == REGISTER(instruction.reg_a)) {
+			if (RREGISTER(instruction.dest) == RREGISTER(instruction.reg_a)) {
 				pc_next = rrisc_cpu->registers.pc + ((int16_t) IMM(instruction.imm));
 			}
 			break;
 		case OP_BLT:
-			if (REGISTER(instruction.dest) > REGISTER(instruction.reg_a)) { // encoded wrong? investigate...
+			if (RREGISTER(instruction.dest) < RREGISTER(instruction.reg_a)) { // was endian problem...
 				pc_next = rrisc_cpu->registers.pc + ((int16_t) IMM(instruction.imm));
 			}
 			break;
 
-		case OP_LDI: REGISTER(instruction.dest) = IMM(instruction.imm); break;
-
 		case OP_JMP: pc_next = IMM(instruction.imm); break;
 		case OP_JREL: pc_next = rrisc_cpu->registers.pc + ((int16_t) IMM(instruction.imm)); break;
+
+		case OP_LDI: REGISTER(instruction.dest) = htonl(ntohs(instruction.imm)); break;
+		case OP_LDC: REGISTER(instruction.dest) = CTRLREGISTER(instruction.reg_a); break;
+		case OP_STC: CTRLREGISTER(instruction.dest) = REGISTER(instruction.reg_a); break;
+		case OP_LDS: REGISTER(instruction.dest) = htonl(rrisc_cpu->registers.sp); break;
+		case OP_STS: sp_next = RREGISTER(instruction.reg_a); break;
+
+		case OP_PUSH:
+			sp_next = rrisc_cpu->registers.sp - 1;
+			BUS_WRITE(rrisc_cpu->mem_bus, sp_next, REGISTER(instruction.reg_a), 0);
+			break;
+		case OP_POP:
+			BUS_READ(rrisc_cpu->mem_bus, REGISTER(instruction.dest), rrisc_cpu->registers.sp, 0);
+			sp_next = rrisc_cpu->registers.sp + 1;
+			break;
+		case OP_IRET:
+			BUS_READ(rrisc_cpu->mem_bus, pc_next, rrisc_cpu->registers.sp, 0);
+			sp_next = rrisc_cpu->registers.sp + 2;
+			break;
+
+		case OP_LDIO: BUS_READ(rrisc_cpu->io_bus, REGISTER(instruction.dest), RREGISTER(instruction.reg_a), 0); break;
+		case OP_STIO: BUS_WRITE(rrisc_cpu->io_bus, RREGISTER(instruction.dest), REGISTER(instruction.reg_a), 0); break;
+
+		default:
+			printf("unimplemented or invalid opcode\n");
+			break;
 	}
 
 	rrisc_cpu->registers.tsc += 1;
 	rrisc_cpu->registers.pc = pc_next;
+	rrisc_cpu->registers.sp = sp_next;
 }
 
 void rrisc_cpu_free(cpu_t * cpu) {

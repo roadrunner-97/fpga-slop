@@ -7,5 +7,15 @@ src/placeable_hardware/*
 *.gprj.*
 
 src/program.hex
+tools/rrvm/rrvm
+# not ready yet
+tools/rrinterp/
 
 *.user
+*.bin
+*.mi
+*.hex
+*.elf
+*.vmd
+*.roadrun
+*.gtkw
